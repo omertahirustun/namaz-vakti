@@ -5,12 +5,13 @@ import { StatusBar } from 'expo-status-bar';
 import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { ImageBackground, StyleSheet, View } from 'react-native';
 import { APP_FONTS } from './src/components/AppText';
 import { PrayerProvider } from './src/PrayerContext';
 import { ThemeProvider, useTheme } from './src/ThemeContext';
 import HomeScreen from './src/screens/HomeScreen';
+import MosquesScreen from './src/screens/MosquesScreen';
 import QiblaScreen from './src/screens/QiblaScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 
@@ -83,28 +84,37 @@ function AppShell({ fontsReady }: { fontsReady: boolean }) {
           tabBarActiveTintColor: theme.colors.accent,
           tabBarInactiveTintColor: theme.colors.muted,
           tabBarStyle: { backgroundColor: theme.colors.card, borderTopColor: theme.colors.border },
-          tabBarIcon: ({ color, size }) => <Ionicons name={ICONS[route.name]} size={size} color={color} />,
+          tabBarIcon: ({ color, size }) =>
+            // Ionicons'ta cami ikonu yok
+            route.name === 'Camiler' ? (
+              <MaterialCommunityIcons name="mosque-outline" size={size} color={color} />
+            ) : (
+              <Ionicons name={ICONS[route.name]} size={size} color={color} />
+            ),
         })}
       >
         <Tab.Screen name="Vakitler" component={HomeScreen} />
         <Tab.Screen name="Kıble" component={QiblaScreen} />
+        <Tab.Screen name="Camiler" component={MosquesScreen} />
         <Tab.Screen name="Ayarlar" component={SettingsScreen} />
       </Tab.Navigator>
     </>
   );
 
-  if (theme.background) {
-    return (
-      <ImageBackground source={theme.background} style={styles.root} resizeMode="cover">
-        <View style={[styles.overlay, { backgroundColor: theme.overlay ?? 'rgba(0,0,0,0.45)' }]} />
-        <View style={styles.root}>
-          <NavigationContainer theme={navTheme}>{content}</NavigationContainer>
-        </View>
-      </ImageBackground>
-    );
-  }
-
-  return <NavigationContainer theme={navTheme}>{content}</NavigationContainer>;
+  // NavigationContainer her temada ağaçta aynı yerde kalmalı. Eskiden fotoğraflı temada
+  // ImageBackground'un içine sarılıp varsayılan temada doğrudan dönülüyordu; tema değişince React onu yeni
+  // bileşen sayıp yeniden kuruyor, navigasyon sıfırlanıp Vakitler sekmesine atıyordu.
+  return (
+    <View style={styles.root}>
+      {theme.background ? (
+        <>
+          <ImageBackground source={theme.background} style={styles.overlay} resizeMode="cover" />
+          <View style={[styles.overlay, { backgroundColor: theme.overlay ?? 'rgba(0,0,0,0.45)' }]} />
+        </>
+      ) : null}
+      <NavigationContainer theme={navTheme}>{content}</NavigationContainer>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

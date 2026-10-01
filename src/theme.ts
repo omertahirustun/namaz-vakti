@@ -59,7 +59,7 @@ const prayerColors: Record<PrayerKey, string> = {
 
 const defaultTheme: ThemeDefinition = {
   id: 'default',
-  label: 'Sade',
+  label: 'Varsayılan Tema',
   colors: {
     bg: '#EEF7F5',
     card: '#FFFFFF',

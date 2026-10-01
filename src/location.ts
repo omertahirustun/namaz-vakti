@@ -24,11 +24,9 @@ async function getPosition(): Promise<Location.LocationObject> {
 
 /** Konum iznini ister, konumu ve şehir adını döndürür. İzin yoksa null. */
 export async function getCurrentPlace(): Promise<Place | null> {
-  const { status } = await Location.requestForegroundPermissionsAsync();
-  if (status !== 'granted') return null;
-
-  const pos = await getPosition();
-  const { latitude, longitude } = pos.coords;
+  const coords = await getCurrentCoords();
+  if (!coords) return null;
+  const { latitude, longitude } = coords;
 
   let name = 'Konumum';
   try {
@@ -42,6 +40,14 @@ export async function getCurrentPlace(): Promise<Place | null> {
     // ters geocode başarısızsa varsayılan ad kalır
   }
   return { latitude, longitude, name };
+}
+
+/** Konum iznini ister ve koordinatları döndürür. İzin yoksa null. */
+export async function getCurrentCoords(): Promise<{ latitude: number; longitude: number } | null> {
+  const { status } = await Location.requestForegroundPermissionsAsync();
+  if (status !== 'granted') return null;
+  const { latitude, longitude } = (await getPosition()).coords;
+  return { latitude, longitude };
 }
 
 const KAABA = { lat: 21.4225, lon: 39.8262 };

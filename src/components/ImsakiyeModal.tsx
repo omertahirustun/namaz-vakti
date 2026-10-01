@@ -65,10 +65,6 @@ export default function ImsakiyeModal({ visible, onClose, days, now, next }: Ims
               <Ionicons name="close" size={22} color={colors.text} />
             </TouchableOpacity>
           </View>
-          <View style={styles.legend}>
-            <View style={styles.legendDot} />
-            <Text style={styles.legendText}>İmsak (sahur bitişi) ve Akşam (iftar) vurgulu</Text>
-          </View>
           <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent}>
             <View style={styles.table}>
               <View style={[styles.tr, styles.thead]}>
@@ -158,9 +154,6 @@ function makeStyles(colors: ThemeColors) {
     borderBottomColor: colors.border,
   },
   sheetTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
-  legend: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingTop: 10 },
-  legendDot: { width: 10, height: 10, borderRadius: 3, backgroundColor: colors.accent, opacity: 0.6 },
-  legendText: { color: colors.muted, fontSize: 11 },
   scroll: { paddingHorizontal: 12 },
   scrollContent: { paddingTop: 10, paddingBottom: 16 },
   // Hafif çizgili tablo: dış çerçeve + satır ve sütun ayırıcıları

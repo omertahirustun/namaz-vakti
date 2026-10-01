@@ -63,11 +63,18 @@ export default function SettingsScreen() {
                 {t.thumbnail ? (
                   <Image source={t.thumbnail} style={styles.themeThumb} resizeMode="cover" />
                 ) : (
-                  <View style={[styles.themeThumb, { backgroundColor: t.colors.accent }]} />
+                  <View style={[StyleSheet.absoluteFill, { backgroundColor: t.colors.accent }]} />
                 )}
-                <Text style={[styles.themeLabel, selected && styles.themeLabelSelected]} numberOfLines={2}>
-                  {t.label}
-                </Text>
+                {selected ? (
+                  <View style={styles.themeCheck}>
+                    <Ionicons name="checkmark" size={16} color={colors.onAccent} />
+                  </View>
+                ) : null}
+                <View style={styles.themeLabelBar}>
+                  <Text style={styles.themeLabel} numberOfLines={1}>
+                    {t.label}
+                  </Text>
+                </View>
               </TouchableOpacity>
             );
           })}
@@ -190,20 +197,40 @@ function makeStyles(colors: ThemeColors) {
     chipText: { color: colors.text, fontSize: 14 },
     chipTextActive: { color: colors.onAccent, fontWeight: '700' },
     footer: { color: colors.muted, fontSize: 12, marginTop: 24, lineHeight: 18 },
-    themeRow: { flexDirection: 'row', gap: 8 },
+    themeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    // Kare kart, 2 sütun. Oran kartın kendisinde; resim kartı yalnızca doldurur (aspectRatio
+    // doğrudan Image'a verilince release derlemede kartlar farklı yükseklikte çıkıyordu).
     themeCard: {
-      flex: 1,
+      flexBasis: '46%',
+      flexGrow: 1,
+      aspectRatio: 1,
       borderRadius: radius,
       borderWidth: 2,
       borderColor: 'transparent',
       backgroundColor: colors.card,
       overflow: 'hidden',
-      paddingBottom: 6,
+      justifyContent: 'flex-end',
     },
     themeCardSelected: { borderColor: colors.accent },
-    themeThumb: { width: '100%', aspectRatio: 3 / 4 },
-    themeLabel: { color: colors.text, fontSize: 11, fontWeight: '600', textAlign: 'center', paddingTop: 6, paddingHorizontal: 2 },
-    themeLabelSelected: { color: colors.accent, fontWeight: '700' },
+    // Yalnız absoluteFill verilince resim kendi piksel boyutunda çizilip kırpılıyordu
+    themeThumb: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },
+    themeCheck: {
+      position: 'absolute',
+      top: 8,
+      right: 8,
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      backgroundColor: colors.accent,
+      // Sade temada kart da aynı renkte; rozet kaybolmasın
+      borderWidth: 2,
+      borderColor: '#FFFFFF',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    // Fotoğrafın üstünde her temada okunur olsun diye sabit koyu şerit
+    themeLabelBar: { backgroundColor: 'rgba(0,0,0,0.55)', paddingVertical: 8, paddingHorizontal: 8 },
+    themeLabel: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', textAlign: 'center' },
     photoCredit: { color: colors.muted, fontSize: 11, marginTop: 8, lineHeight: 15 },
   });
 }
