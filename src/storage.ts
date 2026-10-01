@@ -1,8 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DEFAULT_PLACE, DEFAULT_SETTINGS, Place, Settings } from './types';
+import { DEFAULT_THEME_ID, isThemeId, THEME_ORDER, ThemeId } from './theme';
 
 const SETTINGS_KEY = 'settings:v1';
 const PLACE_KEY = 'place:v1';
+const THEME_KEY = 'theme:v1';
 
 export async function loadSettings(): Promise<Settings> {
   try {
@@ -34,4 +36,17 @@ export async function loadPlace(): Promise<Place> {
 
 export async function savePlace(p: Place): Promise<void> {
   await AsyncStorage.setItem(PLACE_KEY, JSON.stringify(p));
+}
+
+export async function loadThemeId(): Promise<ThemeId> {
+  try {
+    const raw = await AsyncStorage.getItem(THEME_KEY);
+    return isThemeId(raw) && THEME_ORDER.includes(raw) ? raw : DEFAULT_THEME_ID;
+  } catch {
+    return DEFAULT_THEME_ID;
+  }
+}
+
+export async function saveThemeId(id: ThemeId): Promise<void> {
+  await AsyncStorage.setItem(THEME_KEY, id);
 }

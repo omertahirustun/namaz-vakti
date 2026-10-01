@@ -5,12 +5,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import DailySection from '../components/DailySection';
+import ImsakiyeModal from '../components/ImsakiyeModal';
 import { usePrayer } from '../PrayerContext';
-import { colors, heroGradient, prayerColors, radius } from '../theme';
+import { useTheme } from '../ThemeContext';
+import { radius, ThemeColors } from '../theme';
 import { dateKey, dayPartsTr, findCurrent, findNext, formatCountdown, longDateTr, pad, toDate } from '../time';
 import { PRAYER_KEYS, PRAYER_NAMES_TR, PrayerKey } from '../types';
-
-const WEEK_DAYS = 7;
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 const PRAYER_ICONS: Record<PrayerKey, IconName> = {
@@ -30,6 +30,9 @@ function formatHm(d: Date): string {
 
 export default function HomeScreen() {
   const { place, days, loading, error, refresh, locateMe } = usePrayer();
+  const { theme } = useTheme();
+  const { colors, heroGradient, prayerColors } = theme;
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
@@ -38,12 +41,8 @@ export default function HomeScreen() {
   }, []);
 
   const todayKey = dateKey(now);
-  const week = useMemo(
-    () => days.filter((d) => d.date >= todayKey).sort((a, b) => a.date.localeCompare(b.date)).slice(0, WEEK_DAYS),
-    [days, todayKey],
-  );
-  const today = week[0]?.date === todayKey ? week[0] : undefined;
-  const upcoming = week.filter((d) => d.date !== todayKey);
+  const today = useMemo(() => days.find((d) => d.date === todayKey), [days, todayKey]);
+  const [imsakiyeVisible, setImsakiyeVisible] = useState(false);
   const next = useMemo(() => findNext(days, now), [days, now]);
   const nextDate = next ? dateKey(next.at) : null;
   const current = useMemo(() => findCurrent(days, now), [days, now]);
@@ -92,7 +91,15 @@ export default function HomeScreen() {
                 </View>
               ) : null}
               <Text style={styles.heroLabel}>{PRAYER_NAMES_TR[next.key]} vaktine kalan</Text>
-              <Text style={styles.countdown}>{formatCountdown(next.at.getTime() - now.getTime())}</Text>
+              {(() => {
+                const cd = formatCountdown(next.at.getTime() - now.getTime());
+                return (
+                  <Text style={styles.countdown}>
+                    {cd.slice(0, -3)}
+                    <Text style={styles.countdownSec}>{cd.slice(-3)}</Text>
+                  </Text>
+                );
+              })()}
               {current ? (
                 <View style={styles.progressWrap}>
                   <View style={styles.progressTrack}>
@@ -110,7 +117,7 @@ export default function HomeScreen() {
               ) : null}
             </>
           ) : loading ? (
-            <ActivityIndicator color={colors.onAccent} />
+            <ActivityIndicator color={colors.onHero} />
           ) : (
             <Text style={styles.heroLabel}>Vakit bilgisi yok</Text>
           )}
@@ -136,7 +143,7 @@ export default function HomeScreen() {
                 const isCurrent = current?.key === key && currentDate === today.date;
                 const isNext = next?.key === key && nextDate === today.date;
                 const passed = !isCurrent && toDate(today.date, today.times[key]).getTime() < now.getTime();
-                const tint = isCurrent ? colors.onAccent : passed ? colors.muted : colors.text;
+                const tint = isCurrent ? colors.onHero : passed ? colors.muted : colors.text;
                 const content = (
                   <>
                     <Text style={[styles.boxName, { color: tint }]} numberOfLines={1}>
@@ -145,7 +152,7 @@ export default function HomeScreen() {
                     <MaterialCommunityIcons
                       name={PRAYER_ICONS[key]}
                       size={BOX_ICON}
-                      color={isCurrent ? colors.onAccent : passed ? colors.muted : prayerColors[key]}
+                      color={isCurrent ? colors.onHero : passed ? colors.muted : prayerColors[key]}
                       style={styles.boxIcon}
                     />
                     <Text style={[styles.boxTime, { color: tint }]}>{today.times[key]}</Text>
@@ -161,7 +168,6 @@ export default function HomeScreen() {
                       style={[styles.box, styles.boxCurrent]}
                     >
                       {content}
-                      <Text style={styles.nowTag}>ŞİMDİ</Text>
                     </LinearGradient>
                   );
                 }
@@ -184,44 +190,32 @@ export default function HomeScreen() {
           </View>
         ) : null}
 
-        {upcoming.length > 0 ? (
-          <View style={styles.dayCard}>
-            <View style={[styles.tr, styles.thead]}>
-              <Text style={[styles.dayCell, styles.th]}>Gün</Text>
-              {PRAYER_KEYS.map((k) => (
-                <Text key={k} style={[styles.cell, styles.th]} numberOfLines={1}>
-                  {PRAYER_NAMES_TR[k]}
-                </Text>
-              ))}
-            </View>
-            {upcoming.map((d, i) => {
-              const { day, weekdayShort } = dayPartsTr(d.date);
-              return (
-                <View key={d.date} style={[styles.tr, i === upcoming.length - 1 && styles.trLast]}>
-                  <Text style={styles.dayCell}>
-                    {day} {weekdayShort}
-                  </Text>
-                  {PRAYER_KEYS.map((k) => {
-                    const isNext = next?.key === k && nextDate === d.date;
-                    return (
-                      <Text key={k} style={[styles.cell, isNext && styles.cellNext]}>
-                        {d.times[k]}
-                      </Text>
-                    );
-                  })}
-                </View>
-              );
-            })}
-          </View>
-        ) : null}
+        <TouchableOpacity
+          style={styles.imsakiyeCard}
+          onPress={() => setImsakiyeVisible(true)}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="calendar-month" size={20} color={colors.accent} />
+          <Text style={styles.imsakiyeText}>30 günlük imsakiye</Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+        </TouchableOpacity>
 
         <DailySection date={todayKey} />
       </ScrollView>
+
+      <ImsakiyeModal
+        visible={imsakiyeVisible}
+        onClose={() => setImsakiyeVisible(false)}
+        days={days}
+        now={now}
+        next={next}
+      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 20, paddingBottom: 40 },
   placeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -246,15 +240,16 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     marginBottom: 12,
   },
-  nowDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.onAccent },
-  nowText: { color: colors.onAccent, fontSize: 13, fontWeight: '600', letterSpacing: 0.3 },
+  nowDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.onHero },
+  nowText: { color: colors.onHero, fontSize: 13, fontWeight: '600', letterSpacing: 0.3 },
   progressWrap: { alignSelf: 'stretch', paddingHorizontal: 22, marginTop: 14 },
   progressTrack: { height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.25)', overflow: 'hidden' },
-  progressFill: { height: 6, borderRadius: 3, backgroundColor: colors.onAccent },
+  progressFill: { height: 6, borderRadius: 3, backgroundColor: colors.onHero },
   progressLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  progressText: { color: colors.onAccent, fontSize: 12, opacity: 0.85, fontVariant: ['tabular-nums'] },
-  heroLabel: { color: colors.onAccent, fontSize: 15, opacity: 0.9 },
-  countdown: { color: colors.onAccent, fontSize: 48, fontWeight: '300', marginTop: 6, fontVariant: ['tabular-nums'] },
+  progressText: { color: colors.onHero, fontSize: 12, opacity: 0.85, fontVariant: ['tabular-nums'] },
+  heroLabel: { color: colors.onHero, fontSize: 15, opacity: 0.9 },
+  countdown: { color: colors.onHero, fontSize: 48, fontWeight: '300', marginTop: 6, fontVariant: ['tabular-nums'] },
+  countdownSec: { fontSize: 28, fontWeight: '300', opacity: 0.75 },
   dayCard: {
     marginTop: 12,
     backgroundColor: colors.card,
@@ -275,39 +270,38 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 10,
     backgroundColor: colors.cardAlt,
-    borderWidth: 1,
+    // Tüm kutularda aynı kenarlık kalınlığı → hepsi aynı boyda kalır
+    borderWidth: 2,
     borderColor: 'transparent',
   },
-  boxNext: { borderColor: colors.accent, borderWidth: 2, overflow: 'hidden' },
+  boxNext: { borderColor: colors.accent, overflow: 'hidden' },
   boxCurrent: {
-    borderWidth: 0,
     elevation: 6,
     shadowColor: colors.accent,
     shadowOpacity: 0.35,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    transform: [{ scale: 1.06 }],
   },
-  nowTag: { color: colors.onAccent, fontSize: 8, fontWeight: '800', letterSpacing: 1, marginTop: 4, opacity: 0.9 },
   boxPassed: { opacity: 0.55 },
   boxName: { fontSize: 11, fontWeight: '600' },
   boxIcon: { marginVertical: 6 },
   boxFill: { position: 'absolute', left: 0, right: 0, bottom: 0, opacity: 0.35 },
   boxTime: { fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  tr: {
+  imsakiyeCard: {
+    marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    gap: 10,
+    backgroundColor: colors.card,
+    borderRadius: radius,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
   },
-  trLast: { borderBottomWidth: 0 },
-  thead: { borderBottomWidth: 1, borderBottomColor: colors.accent, paddingTop: 0 },
-  th: { color: colors.accent, fontWeight: '700', fontSize: 11 },
-  dayCell: { width: 50, color: colors.text, fontSize: 12 },
-  cell: { flex: 1, color: colors.text, fontSize: 12, textAlign: 'center', fontVariant: ['tabular-nums'] },
-  cellNext: { color: colors.accent, fontWeight: '700' },
+  imsakiyeText: { flex: 1, color: colors.text, fontSize: 15, fontWeight: '600' },
   error: { marginTop: 16, backgroundColor: colors.dangerBg, borderRadius: 12, padding: 14 },
   errorText: { color: colors.danger },
   errorHint: { color: colors.muted, marginTop: 4, fontSize: 12 },
-});
+  });
+}

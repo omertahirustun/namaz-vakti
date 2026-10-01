@@ -1,17 +1,21 @@
-import React from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
+import React, { useMemo } from 'react';
+import { Alert, Image, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import Text from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { needsExactAlarmSetting, openBatterySettings, openExactAlarmSettings } from '../notifications';
 import { usePrayer } from '../PrayerContext';
-import { colors, radius } from '../theme';
+import { useTheme } from '../ThemeContext';
+import { radius, THEME_ORDER, THEMES, ThemeColors } from '../theme';
 import { CALC_METHODS, PRAYER_KEYS, PRAYER_NAMES_TR } from '../types';
 
 const OFFSETS = [0, 5, 10, 15, 20, 30];
 
 export default function SettingsScreen() {
   const { settings, updateSettings, place, locateMe } = usePrayer();
+  const { theme, themeId, setThemeId } = useTheme();
+  const { colors } = theme;
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const onLocate = async () => {
     try {
@@ -43,6 +47,36 @@ export default function SettingsScreen() {
           </View>
           <Text style={styles.link}>Konumumu kullan</Text>
         </TouchableOpacity>
+
+        <Text style={styles.section}>Tema</Text>
+        <View style={styles.themeRow}>
+          {THEME_ORDER.map((id) => {
+            const t = THEMES[id];
+            const selected = id === themeId;
+            return (
+              <TouchableOpacity
+                key={id}
+                onPress={() => setThemeId(id)}
+                activeOpacity={0.8}
+                style={[styles.themeCard, selected && styles.themeCardSelected]}
+              >
+                {t.thumbnail ? (
+                  <Image source={t.thumbnail} style={styles.themeThumb} resizeMode="cover" />
+                ) : (
+                  <View style={[styles.themeThumb, { backgroundColor: t.colors.accent }]} />
+                )}
+                <Text style={[styles.themeLabel, selected && styles.themeLabelSelected]} numberOfLines={2}>
+                  {t.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        {theme.photoCredit ? (
+          <Text style={styles.photoCredit}>
+            Fotoğraf: {theme.photoCredit.author}, {theme.photoCredit.license} (Wikimedia Commons)
+          </Text>
+        ) : null}
 
         <Text style={styles.section}>Bildirimler</Text>
         <View style={styles.card}>
@@ -135,24 +169,41 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 20, paddingBottom: 50 },
-  title: { color: colors.text, fontSize: 24, fontWeight: '700' },
-  section: { color: colors.accent, fontSize: 13, fontWeight: '700', marginTop: 24, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
-  subsection: { color: colors.muted, fontSize: 13, marginTop: 14, marginBottom: 8 },
-  card: { backgroundColor: colors.card, borderRadius: radius, paddingHorizontal: 16, paddingVertical: 6, borderWidth: 1, borderColor: colors.border, marginBottom: 8 },
-  rowInner: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 10 },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
-  sep: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
-  label: { color: colors.text, fontSize: 16 },
-  rowText: { flex: 1, paddingRight: 8 },
-  hint: { color: colors.muted, fontSize: 12, marginTop: 2, lineHeight: 16 },
-  link: { color: colors.accent, paddingVertical: 10, fontWeight: '600' },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card },
-  chipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  chipText: { color: colors.text, fontSize: 14 },
-  chipTextActive: { color: colors.onAccent, fontWeight: '700' },
-  footer: { color: colors.muted, fontSize: 12, marginTop: 24, lineHeight: 18 },
-});
+function makeStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.bg },
+    content: { padding: 20, paddingBottom: 50 },
+    title: { color: colors.text, fontSize: 24, fontWeight: '700' },
+    section: { color: colors.accent, fontSize: 13, fontWeight: '700', marginTop: 24, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
+    subsection: { color: colors.muted, fontSize: 13, marginTop: 14, marginBottom: 8 },
+    card: { backgroundColor: colors.card, borderRadius: radius, paddingHorizontal: 16, paddingVertical: 6, borderWidth: 1, borderColor: colors.border, marginBottom: 8 },
+    rowInner: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 10 },
+    rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
+    sep: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+    label: { color: colors.text, fontSize: 16 },
+    rowText: { flex: 1, paddingRight: 8 },
+    hint: { color: colors.muted, fontSize: 12, marginTop: 2, lineHeight: 16 },
+    link: { color: colors.accent, paddingVertical: 10, fontWeight: '600' },
+    chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    chip: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card },
+    chipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+    chipText: { color: colors.text, fontSize: 14 },
+    chipTextActive: { color: colors.onAccent, fontWeight: '700' },
+    footer: { color: colors.muted, fontSize: 12, marginTop: 24, lineHeight: 18 },
+    themeRow: { flexDirection: 'row', gap: 8 },
+    themeCard: {
+      flex: 1,
+      borderRadius: radius,
+      borderWidth: 2,
+      borderColor: 'transparent',
+      backgroundColor: colors.card,
+      overflow: 'hidden',
+      paddingBottom: 6,
+    },
+    themeCardSelected: { borderColor: colors.accent },
+    themeThumb: { width: '100%', aspectRatio: 3 / 4 },
+    themeLabel: { color: colors.text, fontSize: 11, fontWeight: '600', textAlign: 'center', paddingTop: 6, paddingHorizontal: 2 },
+    themeLabelSelected: { color: colors.accent, fontWeight: '700' },
+    photoCredit: { color: colors.muted, fontSize: 11, marginTop: 8, lineHeight: 15 },
+  });
+}
