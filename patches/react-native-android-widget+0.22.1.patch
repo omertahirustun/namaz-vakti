@@ -1,0 +1,1925 @@
+diff --git a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidget.java b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidget.java
+index 5650d1e..9ff0bd3 100644
+--- a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidget.java
++++ b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidget.java
+@@ -1,458 +1,522 @@
+-package com.reactnativeandroidwidget;
+-
+-import android.app.PendingIntent;
+-import android.appwidget.AppWidgetManager;
+-import android.content.ComponentName;
+-import android.content.Intent;
+-import android.graphics.Bitmap;
+-import android.graphics.Canvas;
+-import android.graphics.Rect;
+-import android.net.Uri;
+-import android.os.Build;
+-import android.os.Bundle;
+-import android.util.Base64;
+-import android.util.TypedValue;
+-import android.view.View;
+-import android.view.ViewGroup;
+-import android.widget.RemoteViews;
+-
+-import androidx.annotation.RequiresApi;
+-
+-import com.facebook.react.bridge.Arguments;
+-import com.facebook.react.bridge.ReactApplicationContext;
+-import com.facebook.react.bridge.ReadableMap;
+-import com.facebook.react.bridge.WritableArray;
+-import com.facebook.react.bridge.WritableMap;
+-import com.reactnativeandroidwidget.builder.ClickableView;
+-import com.reactnativeandroidwidget.builder.CollectionView;
+-import com.reactnativeandroidwidget.builder.CollectionViewItem;
+-import com.reactnativeandroidwidget.builder.WidgetFactory;
+-import com.reactnativeandroidwidget.builder.WidgetWithViews;
+-
+-import java.io.ByteArrayOutputStream;
+-import java.util.ArrayList;
+-import java.util.List;
+-
+-public class RNWidget {
+-    private final ReactApplicationContext appContext;
+-    private final ReadableMap config;
+-    private final String widgetName;
+-
+-    private static final int[] listWrappers = {R.id.rn_widget_list_0_wrapper, R.id.rn_widget_list_1_wrapper};
+-    private static final int[] lists = {R.id.rn_widget_list_0, R.id.rn_widget_list_1};
+-
+-    public RNWidget(ReactApplicationContext context, ReadableMap config, String widgetName) {
+-        this.appContext = context;
+-        this.config = config;
+-        this.widgetName = widgetName;
+-    }
+-
+-    public RNWidget(ReactApplicationContext context, ReadableMap config) {
+-        this(context, config, "");
+-    }
+-
+-    public void drawWidgets() throws Exception {
+-        int[] widgetIds = RNWidgetUtil.getWidgetIds(appContext, widgetName);
+-
+-        for (int widgetId : widgetIds) {
+-            drawWidget(widgetId);
+-        }
+-    }
+-
+-    public void drawWidget(int widgetId) throws Exception {
+-        ReadableMap light = config.getMap("light");
+-        ReadableMap dark = config.getMap("dark");
+-
+-        ReadableMap configClone = Arguments.makeNativeMap(light.toHashMap());
+-        RemoteViews remoteWidgetView = new RemoteViews(appContext.getPackageName(), R.layout.rn_widget);
+-
+-        WidgetWithViews widgetWithViews = WidgetFactory.buildWidgetFromRoot(
+-            appContext,
+-            configClone,
+-            RNWidgetUtil.getWidgetWidth(appContext, widgetId),
+-            RNWidgetUtil.getWidgetHeight(appContext, widgetId)
+-        );
+-
+-        Bitmap bitmap = drawViewToBitmap(widgetWithViews.getRootView());
+-        Uri bitmapUri = saveBitmapToDisk(widgetId, "light", bitmap);
+-        remoteWidgetView.setImageViewUri(R.id.rn_widget_image_light, bitmapUri);
+-
+-        if (widgetWithViews.getRootAccessibilityLabel() != null) {
+-            remoteWidgetView.setContentDescription(R.id.rn_widget_clickable_container, widgetWithViews.getRootAccessibilityLabel());
+-        }
+-
+-        if (dark != null) {
+-            WidgetWithViews darkWidgetWithViews = WidgetFactory.buildWidgetFromRoot(
+-                appContext,
+-                Arguments.makeNativeMap(dark.toHashMap()),
+-                RNWidgetUtil.getWidgetWidth(appContext, widgetId),
+-                RNWidgetUtil.getWidgetHeight(appContext, widgetId)
+-            );
+-
+-            Bitmap darkBitmap = drawViewToBitmap(darkWidgetWithViews.getRootView());
+-            Uri darkBitmapUri = saveBitmapToDisk(widgetId, "dark", darkBitmap);
+-            remoteWidgetView.setImageViewUri(R.id.rn_widget_image_dark, darkBitmapUri);
+-
+-            List<CollectionView> lightCollectionViews = widgetWithViews.getCollectionViews();
+-            List<CollectionView> darkCollectionViews = darkWidgetWithViews.getCollectionViews();
+-
+-            for (int i = 0; i < Math.min(darkCollectionViews.size(), RNWidgetCollectionService.MAX_COLLECTION_WIDGETS); i++) {
+-                RNWidgetCollectionService.storeCollection(appContext, widgetId, i, lightCollectionViews.get(i).getRenderedViews(), "light");
+-                RNWidgetCollectionService.storeCollection(appContext, widgetId, i, darkCollectionViews.get(i).getRenderedViews(), "dark");
+-            }
+-        } else {
+-            remoteWidgetView.setImageViewUri(R.id.rn_widget_image_dark, bitmapUri);
+-
+-            List<CollectionView> collectionViews = widgetWithViews.getCollectionViews();
+-            for (int i = 0; i < Math.min(collectionViews.size(), RNWidgetCollectionService.MAX_COLLECTION_WIDGETS); i++) {
+-                CollectionView collectionView = collectionViews.get(i);
+-                RNWidgetCollectionService.storeCollection(appContext, widgetId, i, collectionView.getRenderedViews(), "light");
+-                RNWidgetCollectionService.storeCollection(appContext, widgetId, i, collectionView.getRenderedViews(), "dark");
+-            }
+-        }
+-
+-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+-            addClickableAreas(widgetId, remoteWidgetView, widgetWithViews);
+-        }
+-        addCollectionViews(widgetId, remoteWidgetView, widgetWithViews);
+-
+-        AppWidgetManager.getInstance(appContext)
+-            .updateAppWidget(widgetId, remoteWidgetView);
+-    }
+-
+-    public WritableMap createPreview(int width, int height) throws Exception {
+-        ReadableMap configClone = Arguments.makeNativeMap(config.toHashMap());
+-
+-        WidgetWithViews widgetWithViews = WidgetFactory.buildWidgetFromRoot(appContext, configClone, width, height);
+-        Bitmap bitmap = drawViewToBitmap(widgetWithViews.getRootView());
+-
+-        WritableMap preview = Arguments.createMap();
+-        preview.putString("base64Image", convertBitmapToBase64(bitmap));
+-        preview.putArray("clickableAreas", createClickableAreasPreview(widgetWithViews));
+-        preview.putArray("collectionAreas", createCollectionAreasPreview(widgetWithViews));
+-
+-        return preview;
+-    }
+-
+-    private Bitmap drawViewToBitmap(View rootView) {
+-        Bitmap bitmap = Bitmap.createBitmap(
+-            rootView.getMeasuredWidth(),
+-            rootView.getMeasuredHeight(),
+-            Bitmap.Config.ARGB_8888
+-        );
+-        Canvas bitmapHolder = new Canvas(bitmap);
+-        rootView.draw(bitmapHolder);
+-        return bitmap;
+-    }
+-
+-    private Uri saveBitmapToDisk(int widgetId, String mode, Bitmap bitmap) {
+-        String fileName = "widget_" + widgetId + "_mode_" + mode + ".png";
+-        RNWidgetImageProvider.writeImage(appContext, fileName, bitmap);
+-        return RNWidgetImageProvider.getImageUri(appContext, fileName);
+-    }
+-
+-    @RequiresApi(Build.VERSION_CODES.N)
+-    private void addClickableAreas(int widgetId, RemoteViews remoteWidgetView, WidgetWithViews widgetWithViews) {
+-        remoteWidgetView.removeAllViews(R.id.rn_widget_clickable_container);
+-        ViewGroup rootView = (ViewGroup) widgetWithViews.getRootView();
+-        List<ClickableView> clickableViews = widgetWithViews.getClickableViews();
+-        for (int i = 0; i < clickableViews.size(); i++) {
+-            ClickableView clickableView = clickableViews.get(i);
+-            addClickableArea(remoteWidgetView, rootView, clickableView, widgetId);
+-        }
+-    }
+-
+-    @RequiresApi(Build.VERSION_CODES.N)
+-    private void addClickableArea(RemoteViews widgetView, ViewGroup rootWidget, ClickableView clickableView, int widgetId) {
+-        View clickableWidget = clickableView.getView();
+-        Rect offsetViewBounds = new Rect();
+-        clickableWidget.getDrawingRect(offsetViewBounds);
+-        rootWidget.offsetDescendantRectToMyCoords(clickableWidget, offsetViewBounds);
+-        RemoteViews clickableRemoteView = new RemoteViews(appContext.getPackageName(), R.layout.rn_widget_clickable);
+-
+-        clickableRemoteView.setViewPadding(
+-            R.id.rn_widget_clickable_positioner,
+-            offsetViewBounds.left,
+-            offsetViewBounds.top,
+-            RNWidgetUtil.dpToPx(appContext, RNWidgetUtil.getWidgetWidth(appContext, widgetId)) - offsetViewBounds.right,
+-            0
+-        );
+-
+-        clickableRemoteView.setInt(R.id.rn_widget_clickable_area, "setMinimumHeight", offsetViewBounds.height());
+-
+-        // The clickable overlay draws its own ripple, so match it to the view's radius when supported
+-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && clickableView.getBorderRadius() > 0f) {
+-            clickableRemoteView.setViewOutlinePreferredRadius(
+-                R.id.rn_widget_clickable_area,
+-                clickableView.getBorderRadius(),
+-                TypedValue.COMPLEX_UNIT_DIP
+-            );
+-            clickableRemoteView.setBoolean(R.id.rn_widget_clickable_area, "setClipToOutline", true);
+-        }
+-
+-        if (clickableView.getAccessibilityLabel() != null) {
+-            clickableRemoteView.setContentDescription(R.id.rn_widget_clickable_area, clickableView.getAccessibilityLabel());
+-        }
+-
+-        registerClickTask(widgetId, clickableView, clickableRemoteView, R.id.rn_widget_clickable_area);
+-
+-        widgetView.addView(R.id.rn_widget_clickable_container, clickableRemoteView);
+-    }
+-
+-    private void registerClickTask(int id, ClickableView clickableView, RemoteViews widgetView, Integer button) {
+-        Intent intent = new Intent(appContext.getPackageName() + ".WIDGET_CLICK");
+-        intent.setComponent(new ComponentName(appContext, RNWidgetUtil.getWidgetProviderClassName(appContext, widgetName)));
+-        intent.putExtra("widgetId", id);
+-        intent.putExtra("clickAction", clickableView.getClickAction());
+-        intent.putExtra("clickActionData", Arguments.toBundle(clickableView.getClickActionData()));
+-        PendingIntent pendingIntent = PendingIntent.getBroadcast(
+-            appContext,
+-            (int) System.currentTimeMillis(),
+-            intent,
+-            PendingIntent.FLAG_CANCEL_CURRENT
+-                | PendingIntent.FLAG_MUTABLE
+-        );
+-        widgetView.setOnClickPendingIntent(button, pendingIntent);
+-    }
+-
+-    private void addCollectionViews(int widgetId, RemoteViews remoteWidgetView, WidgetWithViews widgetWithViews) {
+-        remoteWidgetView.removeAllViews(R.id.rn_widget_collection_container);
+-
+-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+-            remoteWidgetView.setViewLayoutWidth(
+-                R.id.rn_widget_collection_container,
+-                RNWidgetUtil.getWidgetWidth(appContext, widgetId),
+-                TypedValue.COMPLEX_UNIT_DIP
+-            );
+-            remoteWidgetView.setViewLayoutHeight(
+-                R.id.rn_widget_collection_container,
+-                RNWidgetUtil.getWidgetHeight(appContext, widgetId),
+-                TypedValue.COMPLEX_UNIT_DIP
+-            );
+-        }
+-
+-        ViewGroup rootView = (ViewGroup) widgetWithViews.getRootView();
+-        List<CollectionView> collectionViews = widgetWithViews.getCollectionViews();
+-
+-        for (int i = 0; i < Math.min(collectionViews.size(), RNWidgetCollectionService.MAX_COLLECTION_WIDGETS); i++) {
+-            CollectionView collectionView = collectionViews.get(i);
+-            addCollectionView(remoteWidgetView, rootView, collectionView, widgetId, i);
+-        }
+-    }
+-
+-    private void addCollectionView(RemoteViews remoteWidgetView, ViewGroup rootView, CollectionView collectionView, int widgetId, int collectionId) {
+-        View collectionWidget = collectionView.getView();
+-        Rect offsetViewBounds = new Rect();
+-        collectionWidget.getDrawingRect(offsetViewBounds);
+-        rootView.offsetDescendantRectToMyCoords(collectionWidget, offsetViewBounds);
+-
+-        RemoteViews collectionRemoteView = new RemoteViews(appContext.getPackageName(), R.layout.rn_widget_list);
+-
+-        collectionRemoteView.setViewPadding(
+-            R.id.rn_widget_list_positioner,
+-            offsetViewBounds.left,
+-            offsetViewBounds.top,
+-            RNWidgetUtil.dpToPx(appContext, RNWidgetUtil.getWidgetWidth(appContext, widgetId)) - offsetViewBounds.right,
+-            RNWidgetUtil.dpToPx(appContext, RNWidgetUtil.getWidgetHeight(appContext, widgetId)) - offsetViewBounds.bottom
+-        );
+-
+-        for (int i = 0; i < listWrappers.length; i++) {
+-            if (i != collectionId) {
+-                collectionRemoteView.removeAllViews(listWrappers[i]);
+-            }
+-        }
+-
+-        PendingIntent collectionPendingIntentTemplate = createCollectionPendingIntentTemplate(widgetId);
+-        Intent remoteAdapterIntent = createCollectionRemoteAdapterIntent(widgetId, collectionId, collectionView);
+-
+-        collectionRemoteView.setPendingIntentTemplate(lists[collectionId], collectionPendingIntentTemplate);
+-
+-        remoteWidgetView.addView(R.id.rn_widget_collection_container, collectionRemoteView);
+-        remoteWidgetView.setRemoteAdapter(lists[collectionId], remoteAdapterIntent);
+-    }
+-
+-    private Intent createCollectionRemoteAdapterIntent(int widgetId, int collectionId, CollectionView collectionView) {
+-        List<CollectionViewItem> collectionItems = collectionView.getRenderedViews();
+-        Intent intent = new Intent(appContext, RNWidgetCollectionService.class);
+-        intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId);
+-        intent.putExtra("widgetName", widgetName);
+-        intent.putExtra("collectionId", collectionId);
+-        intent.putExtra("collectionSize", collectionItems.size());
+-        // Needed for creating a new ListRemoteViewsFactory when re-rendering widget
+-        intent.putExtra("random", Math.random());
+-        intent.setData(Uri.parse(intent.toUri(Intent.URI_INTENT_SCHEME)));
+-
+-        ArrayList<Bundle> collectionItemsBundle = new ArrayList<>();
+-        for (int i = 0; i < collectionItems.size(); i++) {
+-            CollectionViewItem collectionViewItem = collectionItems.get(i);
+-            Bundle bundle = new Bundle();
+-            bundle.putString("clickAction", collectionViewItem.getClickAction());
+-            bundle.putBundle("clickActionData", Arguments.toBundle(collectionViewItem.getClickActionData()));
+-            bundle.putInt("imageWidth", collectionViewItem.getBitmap().getWidth());
+-            bundle.putString("lightImageName", RNWidgetCollectionService.getImageName(widgetId, collectionId, i, "light"));
+-            bundle.putString("darkImageName", RNWidgetCollectionService.getImageName(widgetId, collectionId, i, "dark"));
+-            
+-            // Add item accessibility label if available
+-            if (collectionViewItem.getItemAccessibilityLabel() != null) {
+-                bundle.putString("itemAccessibilityLabel", collectionViewItem.getItemAccessibilityLabel());
+-            }
+-            
+-            collectionItemsBundle.add(bundle);
+-
+-            ArrayList<Bundle> clickableAreas = new ArrayList<>();
+-            for (ClickableView clickableView : collectionViewItem.getClickableViews()) {
+-                Rect offsetViewBounds = new Rect();
+-                clickableView.getView().getDrawingRect(offsetViewBounds);
+-                collectionViewItem.getView().offsetDescendantRectToMyCoords(clickableView.getView(), offsetViewBounds);
+-
+-                Bundle collectionViewMap = new Bundle();
+-                collectionViewMap.putInt("left", offsetViewBounds.left);
+-                collectionViewMap.putInt("top", offsetViewBounds.top);
+-                collectionViewMap.putInt("right", offsetViewBounds.right);
+-                collectionViewMap.putInt("bottom", offsetViewBounds.bottom);
+-                collectionViewMap.putInt("height", offsetViewBounds.height());
+-                collectionViewMap.putInt("width", offsetViewBounds.width());
+-                collectionViewMap.putString("clickAction", clickableView.getClickAction());
+-                collectionViewMap.putBundle("clickActionData", Arguments.toBundle(clickableView.getClickActionData()));
+-                collectionViewMap.putFloat("borderRadius", clickableView.getBorderRadius());
+-                
+-                // Add clickable area accessibility label if available
+-                if (clickableView.getAccessibilityLabel() != null) {
+-                    collectionViewMap.putString("accessibilityLabel", clickableView.getAccessibilityLabel());
+-                }
+-
+-                clickableAreas.add(collectionViewMap);
+-            }
+-
+-            bundle.putParcelableArrayList("clickableAreas", clickableAreas);
+-        }
+-        intent.putParcelableArrayListExtra("collectionItems", collectionItemsBundle);
+-
+-        return intent;
+-    }
+-
+-    private PendingIntent createCollectionPendingIntentTemplate(int widgetId) {
+-        // This section makes it possible for items to have individualized
+-        // behavior. It does this by setting up a pending intent template.
+-        // Individuals items of a collection can't set up their own pending
+-        // intents. Instead, the collection as a whole sets up a pending
+-        // intent template, and the individual items set a fillInIntent
+-        // to create unique behavior on an item-by-item basis.
+-        Intent widgetListItemClickIntent = new Intent(appContext, RNWidgetCollectionService.class);
+-        // Set the action for the intent.
+-        // When the user touches a particular view, it has the effect of
+-        // broadcasting WIDGET_CLICK.
+-        widgetListItemClickIntent.setComponent(new ComponentName(appContext, RNWidgetUtil.getWidgetProviderClassName(appContext, widgetName)));
+-        widgetListItemClickIntent.setAction(appContext.getPackageName() + ".WIDGET_CLICK");
+-        widgetListItemClickIntent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId);
+-        return PendingIntent.getBroadcast(appContext, 0, widgetListItemClickIntent,
+-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
+-    }
+-
+-    private String convertBitmapToBase64(Bitmap bitmap) {
+-        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream);
+-        byte[] byteArray = byteArrayOutputStream.toByteArray();
+-
+-        return Base64.encodeToString(byteArray, Base64.DEFAULT);
+-    }
+-
+-    private WritableArray createClickableAreasPreview(WidgetWithViews widgetWithViews) {
+-        WritableArray clickableAreas = Arguments.createArray();
+-        ViewGroup rootView = (ViewGroup) widgetWithViews.getRootView();
+-
+-        for (ClickableView clickableView : widgetWithViews.getClickableViews()) {
+-            WritableMap clickableViewMap = createClickableAreaPreview(rootView, clickableView);
+-            clickableAreas.pushMap(clickableViewMap);
+-        }
+-
+-        return clickableAreas;
+-    }
+-
+-    private WritableMap createClickableAreaPreview(ViewGroup rootView, ClickableView clickableView) {
+-        View clickableWidget = clickableView.getView();
+-        Rect offsetViewBounds = new Rect();
+-        clickableWidget.getDrawingRect(offsetViewBounds);
+-        rootView.offsetDescendantRectToMyCoords(clickableWidget, offsetViewBounds);
+-
+-        WritableMap clickableViewMap = Arguments.createMap();
+-        clickableViewMap.putDouble("left", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.left));
+-        clickableViewMap.putDouble("top", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.top));
+-        clickableViewMap.putDouble("width", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.width()));
+-        clickableViewMap.putDouble("height", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.height()));
+-        clickableViewMap.putString("clickAction", clickableView.getClickAction());
+-        clickableViewMap.putMap("clickActionData", Arguments.makeNativeMap(clickableView.getClickActionData().toHashMap()));
+-        clickableViewMap.putDouble("borderRadius", clickableView.getBorderRadius());
+-
+-        return clickableViewMap;
+-    }
+-
+-    private WritableArray createCollectionAreasPreview(WidgetWithViews widgetWithViews) {
+-        WritableArray collectionAreas = Arguments.createArray();
+-        ViewGroup rootView = (ViewGroup) widgetWithViews.getRootView();
+-
+-        for (CollectionView collectionView : widgetWithViews.getCollectionViews()) {
+-            WritableMap collectionViewMap = createCollectionAreaPreview(rootView, collectionView);
+-            collectionAreas.pushMap(collectionViewMap);
+-        }
+-
+-        return collectionAreas;
+-    }
+-
+-    private WritableMap createCollectionAreaPreview(ViewGroup rootView, CollectionView collectionView) {
+-        View clickableWidget = collectionView.getView();
+-        Rect offsetViewBounds = new Rect();
+-        clickableWidget.getDrawingRect(offsetViewBounds);
+-        rootView.offsetDescendantRectToMyCoords(clickableWidget, offsetViewBounds);
+-
+-        WritableMap collectionViewMap = Arguments.createMap();
+-        collectionViewMap.putDouble("left", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.left));
+-        collectionViewMap.putDouble("top", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.top));
+-        collectionViewMap.putDouble("width", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.width()));
+-        collectionViewMap.putDouble("height", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.height()));
+-
+-        WritableArray collectionItems = Arguments.createArray();
+-        for (CollectionViewItem collectionItemView : collectionView.getRenderedViews()) {
+-            WritableMap collectionItemMap = createCollectionItemPreview(collectionItemView);
+-            collectionItems.pushMap(collectionItemMap);
+-        }
+-        collectionViewMap.putArray("items", collectionItems);
+-
+-        return collectionViewMap;
+-    }
+-
+-    private WritableMap createCollectionItemPreview(CollectionViewItem collectionItemView) {
+-        WritableMap collectionItemMap = Arguments.createMap();
+-        Bitmap bitmap = collectionItemView.getBitmap();
+-        collectionItemMap.putString("base64Image", convertBitmapToBase64(bitmap));
+-        collectionItemMap.putDouble("height", RNWidgetUtil.pxToDp(appContext, bitmap.getHeight()));
+-        collectionItemMap.putDouble("width", RNWidgetUtil.pxToDp(appContext, bitmap.getWidth()));
+-        collectionItemMap.putString("clickAction", collectionItemView.getClickAction());
+-        collectionItemMap.putMap("clickActionData", Arguments.makeNativeMap(collectionItemView.getClickActionData().toHashMap()));
+-        collectionItemMap.putArray("clickableAreas", createCollectionItemClickableAreas(collectionItemView));
+-        return collectionItemMap;
+-    }
+-
+-    private WritableArray createCollectionItemClickableAreas(CollectionViewItem collectionItemView) {
+-        WritableArray clickableAreas = Arguments.createArray();
+-
+-        for (ClickableView clickableView : collectionItemView.getClickableViews()) {
+-            Rect offsetViewBounds = new Rect();
+-            clickableView.getView().getDrawingRect(offsetViewBounds);
+-            collectionItemView.getView().offsetDescendantRectToMyCoords(clickableView.getView(), offsetViewBounds);
+-
+-            WritableMap collectionViewMap = Arguments.createMap();
+-            collectionViewMap.putDouble("left", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.left));
+-            collectionViewMap.putDouble("top", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.top));
+-            collectionViewMap.putDouble("width", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.width()));
+-            collectionViewMap.putDouble("height", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.height()));
+-            collectionViewMap.putString("clickAction", clickableView.getClickAction());
+-            collectionViewMap.putMap("clickActionData", Arguments.makeNativeMap(clickableView.getClickActionData().toHashMap()));
+-            collectionViewMap.putDouble("borderRadius", clickableView.getBorderRadius());
+-
+-            clickableAreas.pushMap(collectionViewMap);
+-        }
+-
+-        return clickableAreas;
+-    }
+-}
++package com.reactnativeandroidwidget;
++
++import android.app.PendingIntent;
++import android.appwidget.AppWidgetManager;
++import android.content.ComponentName;
++import android.content.Intent;
++import android.graphics.Bitmap;
++import android.graphics.Canvas;
++import android.graphics.Rect;
++import android.net.Uri;
++import android.os.Build;
++import android.os.Bundle;
++import android.os.SystemClock;
++import android.util.Base64;
++import android.util.Log;
++import android.util.TypedValue;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.TextView;
++import android.widget.RemoteViews;
++
++import androidx.annotation.RequiresApi;
++
++import com.facebook.react.bridge.Arguments;
++import com.facebook.react.bridge.ReactApplicationContext;
++import com.facebook.react.bridge.ReadableMap;
++import com.facebook.react.bridge.WritableArray;
++import com.facebook.react.bridge.WritableMap;
++import com.reactnativeandroidwidget.builder.ClickableView;
++import com.reactnativeandroidwidget.builder.CollectionView;
++import com.reactnativeandroidwidget.builder.CollectionViewItem;
++import com.reactnativeandroidwidget.builder.WidgetFactory;
++import com.reactnativeandroidwidget.builder.WidgetWithViews;
++import com.reactnativeandroidwidget.builder.widget.TextWidget;
++
++import java.io.ByteArrayOutputStream;
++import java.util.ArrayList;
++import java.util.List;
++
++public class RNWidget {
++    private final ReactApplicationContext appContext;
++    private final ReadableMap config;
++    private final String widgetName;
++
++    private static final int[] listWrappers = {R.id.rn_widget_list_0_wrapper, R.id.rn_widget_list_1_wrapper};
++    private static final int[] lists = {R.id.rn_widget_list_0, R.id.rn_widget_list_1};
++
++    public RNWidget(ReactApplicationContext context, ReadableMap config, String widgetName) {
++        this.appContext = context;
++        this.config = config;
++        this.widgetName = widgetName;
++    }
++
++    public RNWidget(ReactApplicationContext context, ReadableMap config) {
++        this(context, config, "");
++    }
++
++    public void drawWidgets() throws Exception {
++        int[] widgetIds = RNWidgetUtil.getWidgetIds(appContext, widgetName);
++
++        for (int widgetId : widgetIds) {
++            drawWidget(widgetId);
++        }
++    }
++
++    public void drawWidget(int widgetId) throws Exception {
++        ReadableMap light = config.getMap("light");
++        ReadableMap dark = config.getMap("dark");
++
++        ReadableMap configClone = Arguments.makeNativeMap(light.toHashMap());
++        RemoteViews remoteWidgetView = new RemoteViews(appContext.getPackageName(), R.layout.rn_widget);
++
++        WidgetWithViews widgetWithViews = WidgetFactory.buildWidgetFromRoot(
++            appContext,
++            configClone,
++            RNWidgetUtil.getWidgetWidth(appContext, widgetId),
++            RNWidgetUtil.getWidgetHeight(appContext, widgetId)
++        );
++
++        Bitmap bitmap = drawViewToBitmap(widgetWithViews.getRootView());
++        Uri bitmapUri = saveBitmapToDisk(widgetId, "light", bitmap);
++        remoteWidgetView.setImageViewUri(R.id.rn_widget_image_light, bitmapUri);
++
++        if (widgetWithViews.getRootAccessibilityLabel() != null) {
++            remoteWidgetView.setContentDescription(R.id.rn_widget_clickable_container, widgetWithViews.getRootAccessibilityLabel());
++        }
++
++        if (dark != null) {
++            WidgetWithViews darkWidgetWithViews = WidgetFactory.buildWidgetFromRoot(
++                appContext,
++                Arguments.makeNativeMap(dark.toHashMap()),
++                RNWidgetUtil.getWidgetWidth(appContext, widgetId),
++                RNWidgetUtil.getWidgetHeight(appContext, widgetId)
++            );
++
++            Bitmap darkBitmap = drawViewToBitmap(darkWidgetWithViews.getRootView());
++            Uri darkBitmapUri = saveBitmapToDisk(widgetId, "dark", darkBitmap);
++            remoteWidgetView.setImageViewUri(R.id.rn_widget_image_dark, darkBitmapUri);
++
++            List<CollectionView> lightCollectionViews = widgetWithViews.getCollectionViews();
++            List<CollectionView> darkCollectionViews = darkWidgetWithViews.getCollectionViews();
++
++            for (int i = 0; i < Math.min(darkCollectionViews.size(), RNWidgetCollectionService.MAX_COLLECTION_WIDGETS); i++) {
++                RNWidgetCollectionService.storeCollection(appContext, widgetId, i, lightCollectionViews.get(i).getRenderedViews(), "light");
++                RNWidgetCollectionService.storeCollection(appContext, widgetId, i, darkCollectionViews.get(i).getRenderedViews(), "dark");
++            }
++        } else {
++            remoteWidgetView.setImageViewUri(R.id.rn_widget_image_dark, bitmapUri);
++
++            List<CollectionView> collectionViews = widgetWithViews.getCollectionViews();
++            for (int i = 0; i < Math.min(collectionViews.size(), RNWidgetCollectionService.MAX_COLLECTION_WIDGETS); i++) {
++                CollectionView collectionView = collectionViews.get(i);
++                RNWidgetCollectionService.storeCollection(appContext, widgetId, i, collectionView.getRenderedViews(), "light");
++                RNWidgetCollectionService.storeCollection(appContext, widgetId, i, collectionView.getRenderedViews(), "dark");
++            }
++        }
++
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
++            addClickableAreas(widgetId, remoteWidgetView, widgetWithViews);
++        }
++        addCollectionViews(widgetId, remoteWidgetView, widgetWithViews);
++        addCountdowns(remoteWidgetView, widgetWithViews);
++
++        AppWidgetManager.getInstance(appContext)
++            .updateAppWidget(widgetId, remoteWidgetView);
++    }
++
++    /**
++     * Places a live Chronometer (static in rn_widget.xml, so no nested RemoteViews or app resources
++     * that some OEM launchers reject) over the first TextWidget that has `countdownTo`. The launcher
++     * ticks it by itself, so the countdown runs every second without re-rendering the widget.
++     * Positioned with left/top padding and a fixed size only: if the host is narrower than the
++     * reported widget width, right padding could squeeze the view to zero width.
++     */
++    private void addCountdowns(RemoteViews remoteWidgetView, WidgetWithViews widgetWithViews) {
++        remoteWidgetView.setViewVisibility(R.id.rn_widget_countdown, View.GONE);
++        remoteWidgetView.setViewVisibility(R.id.rn_widget_countdown_flat, View.GONE);
++        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
++            return;
++        }
++        ViewGroup rootView = (ViewGroup) widgetWithViews.getRootView();
++        List<TextView> countdownViews = new ArrayList<>();
++        findCountdownViews(rootView, countdownViews);
++        if (countdownViews.isEmpty()) {
++            return;
++        }
++        TextView textView = countdownViews.get(0);
++        TextWidget.Countdown countdown = (TextWidget.Countdown) textView.getTag();
++        // Shadows can't be set through RemoteViews, so the layout has a shadowed and a flat Chronometer;
++        // use the one matching the placeholder's text shadow.
++        int viewId = textView.getShadowRadius() > 0 ? R.id.rn_widget_countdown : R.id.rn_widget_countdown_flat;
++        Rect bounds = new Rect();
++        textView.getDrawingRect(bounds);
++        rootView.offsetDescendantRectToMyCoords(textView, bounds);
++
++        // The Chronometer uses the system font, which OEMs (Samsung, Xiaomi...) replace with wider ones
++        // than the font the placeholder was measured with. Give it the widest box centered on the
++        // placeholder and only a minimum height, so the last digit is never clipped.
++        int rootWidth = rootView.getMeasuredWidth();
++        int centerX = bounds.centerX();
++        int halfWidth = Math.max(Math.min(centerX, rootWidth - centerX), bounds.width() / 2);
++        remoteWidgetView.setViewPadding(R.id.rn_widget_countdown_positioner, Math.max(0, centerX - halfWidth), bounds.top, 0, 0);
++        remoteWidgetView.setInt(viewId, "setWidth", halfWidth * 2);
++        remoteWidgetView.setInt(viewId, "setMinHeight", bounds.height());
++        remoteWidgetView.setTextColor(viewId, countdown.color);
++        remoteWidgetView.setTextViewTextSize(viewId, countdown.fontSizeUnit, countdown.fontSize);
++        long base = SystemClock.elapsedRealtime() + (countdown.countdownTo - System.currentTimeMillis());
++        remoteWidgetView.setChronometer(viewId, base, countdown.format, true);
++        remoteWidgetView.setChronometerCountDown(viewId, true);
++        remoteWidgetView.setViewVisibility(viewId, View.VISIBLE);
++        Log.d("RNWidgetCountdown", "widget=" + widgetName + " root=" + rootWidth + "x" + rootView.getMeasuredHeight()
++            + " text=" + bounds + " box=" + Math.max(0, centerX - halfWidth) + "," + bounds.top + " w=" + (halfWidth * 2)
++            + " left=" + (countdown.countdownTo - System.currentTimeMillis()) + "ms format=" + countdown.format);
++    }
++
++    private static void findCountdownViews(View view, List<TextView> result) {
++        if (view instanceof TextView && view.getTag() instanceof TextWidget.Countdown) {
++            result.add((TextView) view);
++        } else if (view instanceof ViewGroup) {
++            ViewGroup group = (ViewGroup) view;
++            for (int i = 0; i < group.getChildCount(); i++) {
++                findCountdownViews(group.getChildAt(i), result);
++            }
++        }
++    }
++
++    public WritableMap createPreview(int width, int height) throws Exception {
++        ReadableMap configClone = Arguments.makeNativeMap(config.toHashMap());
++
++        WidgetWithViews widgetWithViews = WidgetFactory.buildWidgetFromRoot(appContext, configClone, width, height);
++        Bitmap bitmap = drawViewToBitmap(widgetWithViews.getRootView());
++
++        WritableMap preview = Arguments.createMap();
++        preview.putString("base64Image", convertBitmapToBase64(bitmap));
++        preview.putArray("clickableAreas", createClickableAreasPreview(widgetWithViews));
++        preview.putArray("collectionAreas", createCollectionAreasPreview(widgetWithViews));
++
++        return preview;
++    }
++
++    private Bitmap drawViewToBitmap(View rootView) {
++        Bitmap bitmap = Bitmap.createBitmap(
++            rootView.getMeasuredWidth(),
++            rootView.getMeasuredHeight(),
++            Bitmap.Config.ARGB_8888
++        );
++        Canvas bitmapHolder = new Canvas(bitmap);
++        rootView.draw(bitmapHolder);
++        return bitmap;
++    }
++
++    private Uri saveBitmapToDisk(int widgetId, String mode, Bitmap bitmap) {
++        String fileName = "widget_" + widgetId + "_mode_" + mode + ".png";
++        RNWidgetImageProvider.writeImage(appContext, fileName, bitmap);
++        return RNWidgetImageProvider.getImageUri(appContext, fileName);
++    }
++
++    @RequiresApi(Build.VERSION_CODES.N)
++    private void addClickableAreas(int widgetId, RemoteViews remoteWidgetView, WidgetWithViews widgetWithViews) {
++        remoteWidgetView.removeAllViews(R.id.rn_widget_clickable_container);
++        ViewGroup rootView = (ViewGroup) widgetWithViews.getRootView();
++        List<ClickableView> clickableViews = widgetWithViews.getClickableViews();
++        for (int i = 0; i < clickableViews.size(); i++) {
++            ClickableView clickableView = clickableViews.get(i);
++            addClickableArea(remoteWidgetView, rootView, clickableView, widgetId);
++        }
++    }
++
++    @RequiresApi(Build.VERSION_CODES.N)
++    private void addClickableArea(RemoteViews widgetView, ViewGroup rootWidget, ClickableView clickableView, int widgetId) {
++        View clickableWidget = clickableView.getView();
++        Rect offsetViewBounds = new Rect();
++        clickableWidget.getDrawingRect(offsetViewBounds);
++        rootWidget.offsetDescendantRectToMyCoords(clickableWidget, offsetViewBounds);
++        RemoteViews clickableRemoteView = new RemoteViews(appContext.getPackageName(), R.layout.rn_widget_clickable);
++
++        clickableRemoteView.setViewPadding(
++            R.id.rn_widget_clickable_positioner,
++            offsetViewBounds.left,
++            offsetViewBounds.top,
++            RNWidgetUtil.dpToPx(appContext, RNWidgetUtil.getWidgetWidth(appContext, widgetId)) - offsetViewBounds.right,
++            0
++        );
++
++        clickableRemoteView.setInt(R.id.rn_widget_clickable_area, "setMinimumHeight", offsetViewBounds.height());
++
++        // The clickable overlay draws its own ripple, so match it to the view's radius when supported
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && clickableView.getBorderRadius() > 0f) {
++            clickableRemoteView.setViewOutlinePreferredRadius(
++                R.id.rn_widget_clickable_area,
++                clickableView.getBorderRadius(),
++                TypedValue.COMPLEX_UNIT_DIP
++            );
++            clickableRemoteView.setBoolean(R.id.rn_widget_clickable_area, "setClipToOutline", true);
++        }
++
++        if (clickableView.getAccessibilityLabel() != null) {
++            clickableRemoteView.setContentDescription(R.id.rn_widget_clickable_area, clickableView.getAccessibilityLabel());
++        }
++
++        registerClickTask(widgetId, clickableView, clickableRemoteView, R.id.rn_widget_clickable_area);
++
++        widgetView.addView(R.id.rn_widget_clickable_container, clickableRemoteView);
++    }
++
++    private void registerClickTask(int id, ClickableView clickableView, RemoteViews widgetView, Integer button) {
++        Intent intent = new Intent(appContext.getPackageName() + ".WIDGET_CLICK");
++        intent.setComponent(new ComponentName(appContext, RNWidgetUtil.getWidgetProviderClassName(appContext, widgetName)));
++        intent.putExtra("widgetId", id);
++        intent.putExtra("clickAction", clickableView.getClickAction());
++        intent.putExtra("clickActionData", Arguments.toBundle(clickableView.getClickActionData()));
++        PendingIntent pendingIntent = PendingIntent.getBroadcast(
++            appContext,
++            (int) System.currentTimeMillis(),
++            intent,
++            PendingIntent.FLAG_CANCEL_CURRENT
++                | PendingIntent.FLAG_MUTABLE
++        );
++        widgetView.setOnClickPendingIntent(button, pendingIntent);
++    }
++
++    private void addCollectionViews(int widgetId, RemoteViews remoteWidgetView, WidgetWithViews widgetWithViews) {
++        remoteWidgetView.removeAllViews(R.id.rn_widget_collection_container);
++
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
++            remoteWidgetView.setViewLayoutWidth(
++                R.id.rn_widget_collection_container,
++                RNWidgetUtil.getWidgetWidth(appContext, widgetId),
++                TypedValue.COMPLEX_UNIT_DIP
++            );
++            remoteWidgetView.setViewLayoutHeight(
++                R.id.rn_widget_collection_container,
++                RNWidgetUtil.getWidgetHeight(appContext, widgetId),
++                TypedValue.COMPLEX_UNIT_DIP
++            );
++        }
++
++        ViewGroup rootView = (ViewGroup) widgetWithViews.getRootView();
++        List<CollectionView> collectionViews = widgetWithViews.getCollectionViews();
++
++        for (int i = 0; i < Math.min(collectionViews.size(), RNWidgetCollectionService.MAX_COLLECTION_WIDGETS); i++) {
++            CollectionView collectionView = collectionViews.get(i);
++            addCollectionView(remoteWidgetView, rootView, collectionView, widgetId, i);
++        }
++    }
++
++    private void addCollectionView(RemoteViews remoteWidgetView, ViewGroup rootView, CollectionView collectionView, int widgetId, int collectionId) {
++        View collectionWidget = collectionView.getView();
++        Rect offsetViewBounds = new Rect();
++        collectionWidget.getDrawingRect(offsetViewBounds);
++        rootView.offsetDescendantRectToMyCoords(collectionWidget, offsetViewBounds);
++
++        RemoteViews collectionRemoteView = new RemoteViews(appContext.getPackageName(), R.layout.rn_widget_list);
++
++        collectionRemoteView.setViewPadding(
++            R.id.rn_widget_list_positioner,
++            offsetViewBounds.left,
++            offsetViewBounds.top,
++            RNWidgetUtil.dpToPx(appContext, RNWidgetUtil.getWidgetWidth(appContext, widgetId)) - offsetViewBounds.right,
++            RNWidgetUtil.dpToPx(appContext, RNWidgetUtil.getWidgetHeight(appContext, widgetId)) - offsetViewBounds.bottom
++        );
++
++        for (int i = 0; i < listWrappers.length; i++) {
++            if (i != collectionId) {
++                collectionRemoteView.removeAllViews(listWrappers[i]);
++            }
++        }
++
++        PendingIntent collectionPendingIntentTemplate = createCollectionPendingIntentTemplate(widgetId);
++        Intent remoteAdapterIntent = createCollectionRemoteAdapterIntent(widgetId, collectionId, collectionView);
++
++        collectionRemoteView.setPendingIntentTemplate(lists[collectionId], collectionPendingIntentTemplate);
++
++        remoteWidgetView.addView(R.id.rn_widget_collection_container, collectionRemoteView);
++        remoteWidgetView.setRemoteAdapter(lists[collectionId], remoteAdapterIntent);
++    }
++
++    private Intent createCollectionRemoteAdapterIntent(int widgetId, int collectionId, CollectionView collectionView) {
++        List<CollectionViewItem> collectionItems = collectionView.getRenderedViews();
++        Intent intent = new Intent(appContext, RNWidgetCollectionService.class);
++        intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId);
++        intent.putExtra("widgetName", widgetName);
++        intent.putExtra("collectionId", collectionId);
++        intent.putExtra("collectionSize", collectionItems.size());
++        // Needed for creating a new ListRemoteViewsFactory when re-rendering widget
++        intent.putExtra("random", Math.random());
++        intent.setData(Uri.parse(intent.toUri(Intent.URI_INTENT_SCHEME)));
++
++        ArrayList<Bundle> collectionItemsBundle = new ArrayList<>();
++        for (int i = 0; i < collectionItems.size(); i++) {
++            CollectionViewItem collectionViewItem = collectionItems.get(i);
++            Bundle bundle = new Bundle();
++            bundle.putString("clickAction", collectionViewItem.getClickAction());
++            bundle.putBundle("clickActionData", Arguments.toBundle(collectionViewItem.getClickActionData()));
++            bundle.putInt("imageWidth", collectionViewItem.getBitmap().getWidth());
++            bundle.putString("lightImageName", RNWidgetCollectionService.getImageName(widgetId, collectionId, i, "light"));
++            bundle.putString("darkImageName", RNWidgetCollectionService.getImageName(widgetId, collectionId, i, "dark"));
++            
++            // Add item accessibility label if available
++            if (collectionViewItem.getItemAccessibilityLabel() != null) {
++                bundle.putString("itemAccessibilityLabel", collectionViewItem.getItemAccessibilityLabel());
++            }
++            
++            collectionItemsBundle.add(bundle);
++
++            ArrayList<Bundle> clickableAreas = new ArrayList<>();
++            for (ClickableView clickableView : collectionViewItem.getClickableViews()) {
++                Rect offsetViewBounds = new Rect();
++                clickableView.getView().getDrawingRect(offsetViewBounds);
++                collectionViewItem.getView().offsetDescendantRectToMyCoords(clickableView.getView(), offsetViewBounds);
++
++                Bundle collectionViewMap = new Bundle();
++                collectionViewMap.putInt("left", offsetViewBounds.left);
++                collectionViewMap.putInt("top", offsetViewBounds.top);
++                collectionViewMap.putInt("right", offsetViewBounds.right);
++                collectionViewMap.putInt("bottom", offsetViewBounds.bottom);
++                collectionViewMap.putInt("height", offsetViewBounds.height());
++                collectionViewMap.putInt("width", offsetViewBounds.width());
++                collectionViewMap.putString("clickAction", clickableView.getClickAction());
++                collectionViewMap.putBundle("clickActionData", Arguments.toBundle(clickableView.getClickActionData()));
++                collectionViewMap.putFloat("borderRadius", clickableView.getBorderRadius());
++                
++                // Add clickable area accessibility label if available
++                if (clickableView.getAccessibilityLabel() != null) {
++                    collectionViewMap.putString("accessibilityLabel", clickableView.getAccessibilityLabel());
++                }
++
++                clickableAreas.add(collectionViewMap);
++            }
++
++            bundle.putParcelableArrayList("clickableAreas", clickableAreas);
++        }
++        intent.putParcelableArrayListExtra("collectionItems", collectionItemsBundle);
++
++        return intent;
++    }
++
++    private PendingIntent createCollectionPendingIntentTemplate(int widgetId) {
++        // This section makes it possible for items to have individualized
++        // behavior. It does this by setting up a pending intent template.
++        // Individuals items of a collection can't set up their own pending
++        // intents. Instead, the collection as a whole sets up a pending
++        // intent template, and the individual items set a fillInIntent
++        // to create unique behavior on an item-by-item basis.
++        Intent widgetListItemClickIntent = new Intent(appContext, RNWidgetCollectionService.class);
++        // Set the action for the intent.
++        // When the user touches a particular view, it has the effect of
++        // broadcasting WIDGET_CLICK.
++        widgetListItemClickIntent.setComponent(new ComponentName(appContext, RNWidgetUtil.getWidgetProviderClassName(appContext, widgetName)));
++        widgetListItemClickIntent.setAction(appContext.getPackageName() + ".WIDGET_CLICK");
++        widgetListItemClickIntent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId);
++        return PendingIntent.getBroadcast(appContext, 0, widgetListItemClickIntent,
++            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
++    }
++
++    private String convertBitmapToBase64(Bitmap bitmap) {
++        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
++        bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream);
++        byte[] byteArray = byteArrayOutputStream.toByteArray();
++
++        return Base64.encodeToString(byteArray, Base64.DEFAULT);
++    }
++
++    private WritableArray createClickableAreasPreview(WidgetWithViews widgetWithViews) {
++        WritableArray clickableAreas = Arguments.createArray();
++        ViewGroup rootView = (ViewGroup) widgetWithViews.getRootView();
++
++        for (ClickableView clickableView : widgetWithViews.getClickableViews()) {
++            WritableMap clickableViewMap = createClickableAreaPreview(rootView, clickableView);
++            clickableAreas.pushMap(clickableViewMap);
++        }
++
++        return clickableAreas;
++    }
++
++    private WritableMap createClickableAreaPreview(ViewGroup rootView, ClickableView clickableView) {
++        View clickableWidget = clickableView.getView();
++        Rect offsetViewBounds = new Rect();
++        clickableWidget.getDrawingRect(offsetViewBounds);
++        rootView.offsetDescendantRectToMyCoords(clickableWidget, offsetViewBounds);
++
++        WritableMap clickableViewMap = Arguments.createMap();
++        clickableViewMap.putDouble("left", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.left));
++        clickableViewMap.putDouble("top", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.top));
++        clickableViewMap.putDouble("width", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.width()));
++        clickableViewMap.putDouble("height", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.height()));
++        clickableViewMap.putString("clickAction", clickableView.getClickAction());
++        clickableViewMap.putMap("clickActionData", Arguments.makeNativeMap(clickableView.getClickActionData().toHashMap()));
++        clickableViewMap.putDouble("borderRadius", clickableView.getBorderRadius());
++
++        return clickableViewMap;
++    }
++
++    private WritableArray createCollectionAreasPreview(WidgetWithViews widgetWithViews) {
++        WritableArray collectionAreas = Arguments.createArray();
++        ViewGroup rootView = (ViewGroup) widgetWithViews.getRootView();
++
++        for (CollectionView collectionView : widgetWithViews.getCollectionViews()) {
++            WritableMap collectionViewMap = createCollectionAreaPreview(rootView, collectionView);
++            collectionAreas.pushMap(collectionViewMap);
++        }
++
++        return collectionAreas;
++    }
++
++    private WritableMap createCollectionAreaPreview(ViewGroup rootView, CollectionView collectionView) {
++        View clickableWidget = collectionView.getView();
++        Rect offsetViewBounds = new Rect();
++        clickableWidget.getDrawingRect(offsetViewBounds);
++        rootView.offsetDescendantRectToMyCoords(clickableWidget, offsetViewBounds);
++
++        WritableMap collectionViewMap = Arguments.createMap();
++        collectionViewMap.putDouble("left", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.left));
++        collectionViewMap.putDouble("top", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.top));
++        collectionViewMap.putDouble("width", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.width()));
++        collectionViewMap.putDouble("height", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.height()));
++
++        WritableArray collectionItems = Arguments.createArray();
++        for (CollectionViewItem collectionItemView : collectionView.getRenderedViews()) {
++            WritableMap collectionItemMap = createCollectionItemPreview(collectionItemView);
++            collectionItems.pushMap(collectionItemMap);
++        }
++        collectionViewMap.putArray("items", collectionItems);
++
++        return collectionViewMap;
++    }
++
++    private WritableMap createCollectionItemPreview(CollectionViewItem collectionItemView) {
++        WritableMap collectionItemMap = Arguments.createMap();
++        Bitmap bitmap = collectionItemView.getBitmap();
++        collectionItemMap.putString("base64Image", convertBitmapToBase64(bitmap));
++        collectionItemMap.putDouble("height", RNWidgetUtil.pxToDp(appContext, bitmap.getHeight()));
++        collectionItemMap.putDouble("width", RNWidgetUtil.pxToDp(appContext, bitmap.getWidth()));
++        collectionItemMap.putString("clickAction", collectionItemView.getClickAction());
++        collectionItemMap.putMap("clickActionData", Arguments.makeNativeMap(collectionItemView.getClickActionData().toHashMap()));
++        collectionItemMap.putArray("clickableAreas", createCollectionItemClickableAreas(collectionItemView));
++        return collectionItemMap;
++    }
++
++    private WritableArray createCollectionItemClickableAreas(CollectionViewItem collectionItemView) {
++        WritableArray clickableAreas = Arguments.createArray();
++
++        for (ClickableView clickableView : collectionItemView.getClickableViews()) {
++            Rect offsetViewBounds = new Rect();
++            clickableView.getView().getDrawingRect(offsetViewBounds);
++            collectionItemView.getView().offsetDescendantRectToMyCoords(clickableView.getView(), offsetViewBounds);
++
++            WritableMap collectionViewMap = Arguments.createMap();
++            collectionViewMap.putDouble("left", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.left));
++            collectionViewMap.putDouble("top", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.top));
++            collectionViewMap.putDouble("width", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.width()));
++            collectionViewMap.putDouble("height", RNWidgetUtil.pxToDp(appContext, offsetViewBounds.height()));
++            collectionViewMap.putString("clickAction", clickableView.getClickAction());
++            collectionViewMap.putMap("clickActionData", Arguments.makeNativeMap(clickableView.getClickActionData().toHashMap()));
++            collectionViewMap.putDouble("borderRadius", clickableView.getBorderRadius());
++
++            clickableAreas.pushMap(collectionViewMap);
++        }
++
++        return clickableAreas;
++    }
++}
+diff --git a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/builder/widget/TextWidget.java b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/builder/widget/TextWidget.java
+index 1f9aa00..1e749d9 100644
+--- a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/builder/widget/TextWidget.java
++++ b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/builder/widget/TextWidget.java
+@@ -1,154 +1,184 @@
+-package com.reactnativeandroidwidget.builder.widget;
+-
+-import static android.util.TypedValue.COMPLEX_UNIT_DIP;
+-import static android.util.TypedValue.COMPLEX_UNIT_SP;
+-
+-import android.graphics.Color;
+-import android.graphics.Typeface;
+-import android.os.Build;
+-import android.text.TextUtils;
+-import android.util.TypedValue;
+-import android.view.Gravity;
+-import android.widget.TextView;
+-
+-import androidx.core.widget.TextViewCompat;
+-
+-import com.facebook.react.bridge.ReactApplicationContext;
+-import com.facebook.react.bridge.ReadableMap;
+-import com.reactnativeandroidwidget.builder.widget.utils.ResourceUtils;
+-
+-public class TextWidget extends BaseWidget<TextView> {
+-    public TextWidget(ReactApplicationContext context, ReadableMap props) {
+-        super(context, props);
+-    }
+-
+-    @Override
+-    protected TextView createView() {
+-        return new TextView(appContext);
+-    }
+-
+-    @Override
+-    public void applyProps() {
+-        view.setText(getString("text", ""));
+-        view.setTextSize(getFontSizeUnit(), getFontSize());
+-        view.setTextColor(Color.parseColor(getString("color", "#000000")));
+-
+-        if (props.hasKey("adjustsFontSizeToFit") && props.getBoolean("adjustsFontSizeToFit")) {
+-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+-                view.setAutoSizeTextTypeUniformWithConfiguration(1, Math.round(getFontSize()), 1, getFontSizeUnit());
+-            } else {
+-                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(view, 1, Math.round(getFontSize()), 1, getFontSizeUnit());
+-            }
+-        }
+-
+-        if (props.hasKey("textAlign")) {
+-            if ("left".equals(props.getString("textAlign"))) {
+-                view.setGravity(Gravity.LEFT);
+-            } else if ("right".equals(props.getString("textAlign"))) {
+-                view.setGravity(Gravity.RIGHT);
+-            } else {
+-                view.setGravity(Gravity.CENTER);
+-            }
+-        }
+-
+-        setFont();
+-        setShadow();
+-
+-        if (props.hasKey("letterSpacing")) {
+-            view.setLetterSpacing((float) (props.getDouble("letterSpacing") / getFontSize()));
+-        }
+-
+-        if (props.hasKey("lineSpacingExtra")) {
+-            view.setLineSpacing(dpToPx(props.getDouble("lineSpacingExtra")), 1.0f);
+-        }
+-
+-        if (props.hasKey("lineHeight")) {
+-            setLineHeight(props.getDouble("lineHeight"));
+-        }
+-
+-        if (props.hasKey("truncate")) {
+-            view.setEllipsize(TextUtils.TruncateAt.valueOf(props.getString("truncate")));
+-        }
+-
+-        if (props.hasKey("maxLines")) {
+-            view.setMaxLines(props.getInt("maxLines"));
+-        }
+-    }
+-
+-    private void setFont() {
+-        Typeface typeface = ResourceUtils.getTypeface(appContext, props.getString("fontFamily"));
+-        boolean isItalic = "italic".equals(props.getString("fontStyle"));
+-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+-
+-            int fontWeight = 400;
+-            if (props.hasKey("fontWeight")) {
+-                String fontWeightStyle = getString("fontWeight", "400");
+-                if ("normal".equals(fontWeightStyle)) {
+-                    fontWeight = 400;
+-                } else if ("bold".equals(fontWeightStyle)) {
+-                    fontWeight = 700;
+-                } else {
+-                    fontWeight = Integer.parseInt(fontWeightStyle);
+-                }
+-            }
+-
+-            typeface = Typeface.create(typeface, fontWeight, isItalic);
+-            view.setTypeface(typeface);
+-        } else {
+-            int typefaceStyle = Typeface.NORMAL;
+-
+-            if (isItalic) {
+-                typefaceStyle |= Typeface.ITALIC;
+-            }
+-
+-            if (props.hasKey("fontWeight") && !"normal".equals(props.getString("fontWeight"))) {
+-                String fontWeight = getString("fontWeight", "0");
+-                if ("bold".equals(fontWeight) || "500".compareTo(fontWeight) <= 0) {
+-                    typefaceStyle |= Typeface.BOLD;
+-                }
+-            }
+-
+-            view.setTypeface(typeface, typefaceStyle);
+-        }
+-    }
+-
+-    private void setShadow() {
+-        ReadableMap shadow = props.getMap("shadow");
+-        if (shadow != null) {
+-            view.setShadowLayer(
+-                dpToPx(shadow.getDouble("radius")),
+-                dpToPx(shadow.getDouble("dx")),
+-                dpToPx(shadow.getDouble("dy")),
+-                Color.parseColor(shadow.getString("color"))
+-            );
+-        }
+-    }
+-
+-    private void setLineHeight(double lineHeight) {
+-        int lineHeightPx = textSizeToPx(lineHeight);
+-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+-            view.setLineHeight(lineHeightPx);
+-        } else {
+-            TextViewCompat.setLineHeight(view, lineHeightPx);
+-        }
+-    }
+-
+-    private float getFontSize() {
+-        float fontSize = 12;
+-        if (props.hasKey("fontSize")) {
+-            fontSize = (float) props.getDouble("fontSize");
+-        }
+-        return fontSize;
+-    }
+-
+-    private int getFontSizeUnit() {
+-        if (props.hasKey("allowFontScaling") && Boolean.FALSE.equals(props.getBoolean("allowFontScaling"))) {
+-            return COMPLEX_UNIT_DIP;
+-        }
+-        return COMPLEX_UNIT_SP;
+-    }
+-
+-    private int textSizeToPx(double value) {
+-        return Math.round(TypedValue.applyDimension(getFontSizeUnit(), (float) value, appContext.getResources().getDisplayMetrics()));
+-    }
+-}
++package com.reactnativeandroidwidget.builder.widget;
++
++import static android.util.TypedValue.COMPLEX_UNIT_DIP;
++import static android.util.TypedValue.COMPLEX_UNIT_SP;
++
++import android.graphics.Color;
++import android.graphics.Typeface;
++import android.os.Build;
++import android.text.TextUtils;
++import android.util.TypedValue;
++import android.view.Gravity;
++import android.widget.TextView;
++
++import androidx.core.widget.TextViewCompat;
++
++import com.facebook.react.bridge.ReactApplicationContext;
++import com.facebook.react.bridge.ReadableMap;
++import com.reactnativeandroidwidget.builder.widget.utils.ResourceUtils;
++
++public class TextWidget extends BaseWidget<TextView> {
++    /** Attached as the view tag when `countdownTo` is set; RNWidget draws a Chronometer over it. */
++    public static class Countdown {
++        public final long countdownTo;
++        public final int color;
++        public final int fontSizeUnit;
++        public final float fontSize;
++        /** Chronometer format (`%s` = remaining time), or null for the plain H:MM:SS / MM:SS text */
++        public final String format;
++
++        Countdown(long countdownTo, int color, int fontSizeUnit, float fontSize, String format) {
++            this.countdownTo = countdownTo;
++            this.format = format;
++            this.color = color;
++            this.fontSizeUnit = fontSizeUnit;
++            this.fontSize = fontSize;
++        }
++    }
++
++    public TextWidget(ReactApplicationContext context, ReadableMap props) {
++        super(context, props);
++    }
++
++    @Override
++    protected TextView createView() {
++        return new TextView(appContext);
++    }
++
++    @Override
++    public void applyProps() {
++        view.setText(getString("text", ""));
++        view.setTextSize(getFontSizeUnit(), getFontSize());
++        view.setTextColor(Color.parseColor(getString("color", "#000000")));
++
++        if (props.hasKey("adjustsFontSizeToFit") && props.getBoolean("adjustsFontSizeToFit")) {
++            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
++                view.setAutoSizeTextTypeUniformWithConfiguration(1, Math.round(getFontSize()), 1, getFontSizeUnit());
++            } else {
++                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(view, 1, Math.round(getFontSize()), 1, getFontSizeUnit());
++            }
++        }
++
++        if (props.hasKey("textAlign")) {
++            if ("left".equals(props.getString("textAlign"))) {
++                view.setGravity(Gravity.LEFT);
++            } else if ("right".equals(props.getString("textAlign"))) {
++                view.setGravity(Gravity.RIGHT);
++            } else {
++                view.setGravity(Gravity.CENTER);
++            }
++        }
++
++        setFont();
++        setShadow();
++
++        if (props.hasKey("letterSpacing")) {
++            view.setLetterSpacing((float) (props.getDouble("letterSpacing") / getFontSize()));
++        }
++
++        if (props.hasKey("lineSpacingExtra")) {
++            view.setLineSpacing(dpToPx(props.getDouble("lineSpacingExtra")), 1.0f);
++        }
++
++        if (props.hasKey("lineHeight")) {
++            setLineHeight(props.getDouble("lineHeight"));
++        }
++
++        if (props.hasKey("truncate")) {
++            view.setEllipsize(TextUtils.TruncateAt.valueOf(props.getString("truncate")));
++        }
++
++        if (props.hasKey("maxLines")) {
++            view.setMaxLines(props.getInt("maxLines"));
++        }
++
++        if (props.hasKey("countdownTo")) {
++            view.setTag(new Countdown(
++                (long) props.getDouble("countdownTo"),
++                view.getCurrentTextColor(),
++                getFontSizeUnit(),
++                getFontSize(),
++                props.hasKey("countdownFormat") ? props.getString("countdownFormat") : null
++            ));
++            // Text only reserves the space; the live Chronometer is drawn on top of the bitmap
++            view.setTextColor(Color.TRANSPARENT);
++        }
++    }
++
++    private void setFont() {
++        Typeface typeface = ResourceUtils.getTypeface(appContext, props.getString("fontFamily"));
++        boolean isItalic = "italic".equals(props.getString("fontStyle"));
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
++
++            int fontWeight = 400;
++            if (props.hasKey("fontWeight")) {
++                String fontWeightStyle = getString("fontWeight", "400");
++                if ("normal".equals(fontWeightStyle)) {
++                    fontWeight = 400;
++                } else if ("bold".equals(fontWeightStyle)) {
++                    fontWeight = 700;
++                } else {
++                    fontWeight = Integer.parseInt(fontWeightStyle);
++                }
++            }
++
++            typeface = Typeface.create(typeface, fontWeight, isItalic);
++            view.setTypeface(typeface);
++        } else {
++            int typefaceStyle = Typeface.NORMAL;
++
++            if (isItalic) {
++                typefaceStyle |= Typeface.ITALIC;
++            }
++
++            if (props.hasKey("fontWeight") && !"normal".equals(props.getString("fontWeight"))) {
++                String fontWeight = getString("fontWeight", "0");
++                if ("bold".equals(fontWeight) || "500".compareTo(fontWeight) <= 0) {
++                    typefaceStyle |= Typeface.BOLD;
++                }
++            }
++
++            view.setTypeface(typeface, typefaceStyle);
++        }
++    }
++
++    private void setShadow() {
++        ReadableMap shadow = props.getMap("shadow");
++        if (shadow != null) {
++            view.setShadowLayer(
++                dpToPx(shadow.getDouble("radius")),
++                dpToPx(shadow.getDouble("dx")),
++                dpToPx(shadow.getDouble("dy")),
++                Color.parseColor(shadow.getString("color"))
++            );
++        }
++    }
++
++    private void setLineHeight(double lineHeight) {
++        int lineHeightPx = textSizeToPx(lineHeight);
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
++            view.setLineHeight(lineHeightPx);
++        } else {
++            TextViewCompat.setLineHeight(view, lineHeightPx);
++        }
++    }
++
++    private float getFontSize() {
++        float fontSize = 12;
++        if (props.hasKey("fontSize")) {
++            fontSize = (float) props.getDouble("fontSize");
++        }
++        return fontSize;
++    }
++
++    private int getFontSizeUnit() {
++        if (props.hasKey("allowFontScaling") && Boolean.FALSE.equals(props.getBoolean("allowFontScaling"))) {
++            return COMPLEX_UNIT_DIP;
++        }
++        return COMPLEX_UNIT_SP;
++    }
++
++    private int textSizeToPx(double value) {
++        return Math.round(TypedValue.applyDimension(getFontSizeUnit(), (float) value, appContext.getResources().getDisplayMetrics()));
++    }
++}
+diff --git a/node_modules/react-native-android-widget/android/src/main/res/layout/rn_widget.xml b/node_modules/react-native-android-widget/android/src/main/res/layout/rn_widget.xml
+index 870d18b..1dacee5 100644
+--- a/node_modules/react-native-android-widget/android/src/main/res/layout/rn_widget.xml
++++ b/node_modules/react-native-android-widget/android/src/main/res/layout/rn_widget.xml
+@@ -1,31 +1,61 @@
+-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+-    android:id="@android:id/background"
+-    android:layout_width="match_parent"
+-    android:layout_height="match_parent">
+-
+-    <ImageView
+-        android:id="@+id/rn_widget_image_light"
+-        android:layout_width="match_parent"
+-        android:layout_height="match_parent"
+-        android:background="@android:color/transparent"
+-        android:scaleType="matrix"
+-        android:visibility="visible" />
+-
+-    <ImageView
+-        android:id="@+id/rn_widget_image_dark"
+-        android:layout_width="match_parent"
+-        android:layout_height="match_parent"
+-        android:background="@android:color/transparent"
+-        android:scaleType="matrix"
+-        android:visibility="gone" />
+-
+-    <FrameLayout
+-        android:id="@+id/rn_widget_clickable_container"
+-        android:layout_width="match_parent"
+-        android:layout_height="match_parent" />
+-
+-    <FrameLayout
+-        android:id="@+id/rn_widget_collection_container"
+-        android:layout_width="match_parent"
+-        android:layout_height="match_parent" />
+-</FrameLayout>
++<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
++    android:id="@android:id/background"
++    android:layout_width="match_parent"
++    android:layout_height="match_parent">
++
++    <ImageView
++        android:id="@+id/rn_widget_image_light"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent"
++        android:background="@android:color/transparent"
++        android:scaleType="matrix"
++        android:visibility="visible" />
++
++    <ImageView
++        android:id="@+id/rn_widget_image_dark"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent"
++        android:background="@android:color/transparent"
++        android:scaleType="matrix"
++        android:visibility="gone" />
++
++    <FrameLayout
++        android:id="@+id/rn_widget_countdown_positioner"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent">
++
++        <Chronometer
++            android:id="@+id/rn_widget_countdown"
++            android:layout_width="wrap_content"
++            android:layout_height="wrap_content"
++            android:fontFeatureSettings="tnum"
++            android:gravity="center"
++            android:maxLines="1"
++            android:shadowColor="#99000000"
++            android:shadowDy="1"
++            android:shadowRadius="4"
++            android:textStyle="bold"
++            android:visibility="gone" />
++
++        <!-- Gölgesiz kopya: yer tutucu yazıda gölge yoksa bu kullanılır (ör. düz kırmızı son dakikalar) -->
++        <Chronometer
++            android:id="@+id/rn_widget_countdown_flat"
++            android:layout_width="wrap_content"
++            android:layout_height="wrap_content"
++            android:fontFeatureSettings="tnum"
++            android:gravity="center"
++            android:maxLines="1"
++            android:textStyle="bold"
++            android:visibility="gone" />
++    </FrameLayout>
++
++    <FrameLayout
++        android:id="@+id/rn_widget_clickable_container"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent" />
++
++    <FrameLayout
++        android:id="@+id/rn_widget_collection_container"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent" />
++</FrameLayout>
+diff --git a/node_modules/react-native-android-widget/android/src/main/res/layout-night/rn_widget.xml b/node_modules/react-native-android-widget/android/src/main/res/layout-night/rn_widget.xml
+index e00a8c1..a5fff45 100644
+--- a/node_modules/react-native-android-widget/android/src/main/res/layout-night/rn_widget.xml
++++ b/node_modules/react-native-android-widget/android/src/main/res/layout-night/rn_widget.xml
+@@ -1,31 +1,61 @@
+-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+-    android:id="@android:id/background"
+-    android:layout_width="match_parent"
+-    android:layout_height="match_parent">
+-
+-    <ImageView
+-        android:id="@+id/rn_widget_image_light"
+-        android:layout_width="match_parent"
+-        android:layout_height="match_parent"
+-        android:background="@android:color/transparent"
+-        android:scaleType="matrix"
+-        android:visibility="gone" />
+-
+-    <ImageView
+-        android:id="@+id/rn_widget_image_dark"
+-        android:layout_width="match_parent"
+-        android:layout_height="match_parent"
+-        android:background="@android:color/transparent"
+-        android:scaleType="matrix"
+-        android:visibility="visible" />
+-
+-    <FrameLayout
+-        android:id="@+id/rn_widget_clickable_container"
+-        android:layout_width="match_parent"
+-        android:layout_height="match_parent" />
+-
+-    <FrameLayout
+-        android:id="@+id/rn_widget_collection_container"
+-        android:layout_width="match_parent"
+-        android:layout_height="match_parent" />
+-</FrameLayout>
++<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
++    android:id="@android:id/background"
++    android:layout_width="match_parent"
++    android:layout_height="match_parent">
++
++    <ImageView
++        android:id="@+id/rn_widget_image_light"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent"
++        android:background="@android:color/transparent"
++        android:scaleType="matrix"
++        android:visibility="gone" />
++
++    <ImageView
++        android:id="@+id/rn_widget_image_dark"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent"
++        android:background="@android:color/transparent"
++        android:scaleType="matrix"
++        android:visibility="visible" />
++
++    <FrameLayout
++        android:id="@+id/rn_widget_countdown_positioner"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent">
++
++        <Chronometer
++            android:id="@+id/rn_widget_countdown"
++            android:layout_width="wrap_content"
++            android:layout_height="wrap_content"
++            android:fontFeatureSettings="tnum"
++            android:gravity="center"
++            android:maxLines="1"
++            android:shadowColor="#99000000"
++            android:shadowDy="1"
++            android:shadowRadius="4"
++            android:textStyle="bold"
++            android:visibility="gone" />
++
++        <!-- Gölgesiz kopya: yer tutucu yazıda gölge yoksa bu kullanılır (ör. düz kırmızı son dakikalar) -->
++        <Chronometer
++            android:id="@+id/rn_widget_countdown_flat"
++            android:layout_width="wrap_content"
++            android:layout_height="wrap_content"
++            android:fontFeatureSettings="tnum"
++            android:gravity="center"
++            android:maxLines="1"
++            android:textStyle="bold"
++            android:visibility="gone" />
++    </FrameLayout>
++
++    <FrameLayout
++        android:id="@+id/rn_widget_clickable_container"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent" />
++
++    <FrameLayout
++        android:id="@+id/rn_widget_collection_container"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent" />
++</FrameLayout>
+diff --git a/node_modules/react-native-android-widget/lib/commonjs/widgets/TextWidget.js b/node_modules/react-native-android-widget/lib/commonjs/widgets/TextWidget.js
+index 73127e2..3cbafe3 100644
+--- a/node_modules/react-native-android-widget/lib/commonjs/widgets/TextWidget.js
++++ b/node_modules/react-native-android-widget/lib/commonjs/widgets/TextWidget.js
+@@ -44,6 +44,12 @@ TextWidget.convertProps = props => {
+     } : {}),
+     ...(props.maxLines ? {
+       maxLines: props.maxLines
++    } : {}),
++    ...(props.countdownTo ? {
++      countdownTo: props.countdownTo
++    } : {}),
++    ...(props.countdownFormat ? {
++      countdownFormat: props.countdownFormat
+     } : {})
+   };
+ };
+diff --git a/node_modules/react-native-android-widget/lib/module/widgets/TextWidget.js b/node_modules/react-native-android-widget/lib/module/widgets/TextWidget.js
+index 0723a31..b20dd48 100644
+--- a/node_modules/react-native-android-widget/lib/module/widgets/TextWidget.js
++++ b/node_modules/react-native-android-widget/lib/module/widgets/TextWidget.js
+@@ -38,6 +38,12 @@ TextWidget.convertProps = props => {
+     } : {}),
+     ...(props.maxLines ? {
+       maxLines: props.maxLines
++    } : {}),
++    ...(props.countdownTo ? {
++      countdownTo: props.countdownTo
++    } : {}),
++    ...(props.countdownFormat ? {
++      countdownFormat: props.countdownFormat
+     } : {})
+   };
+ };
+diff --git a/node_modules/react-native-android-widget/lib/typescript/widgets/TextWidget.d.ts b/node_modules/react-native-android-widget/lib/typescript/widgets/TextWidget.d.ts
+index c72103e..ccf419f 100644
+--- a/node_modules/react-native-android-widget/lib/typescript/widgets/TextWidget.d.ts
++++ b/node_modules/react-native-android-widget/lib/typescript/widgets/TextWidget.d.ts
+@@ -22,6 +22,8 @@ interface TextWidgetInternalProps extends CommonInternalProps {
+     };
+     truncate?: 'START' | 'MIDDLE' | 'END';
+     maxLines?: number;
++    countdownTo?: number;
++    countdownFormat?: string;
+ }
+ export interface TextWidgetStyle extends CommonStyleProps {
+     color?: ColorProp;
+@@ -65,6 +67,8 @@ export interface TextWidgetProps extends ClickActionProps {
+      * @default true
+      */
+     allowFontScaling?: boolean;
++    countdownTo?: number;
++    countdownFormat?: string;
+ }
+ export declare function TextWidget(_: TextWidgetProps): null;
+ export declare namespace TextWidget {
+diff --git a/node_modules/react-native-android-widget/src/widgets/TextWidget.tsx b/node_modules/react-native-android-widget/src/widgets/TextWidget.tsx
+index f984cb3..9145e09 100644
+--- a/node_modules/react-native-android-widget/src/widgets/TextWidget.tsx
++++ b/node_modules/react-native-android-widget/src/widgets/TextWidget.tsx
+@@ -1,163 +1,179 @@
+-import {
+-  convertClickAction,
+-  type ClickActionProps,
+-} from './utils/click-action';
+-import type { CommonInternalProps } from './utils/common-internal.props';
+-import type {
+-  ColorProp,
+-  CommonStyleProps,
+-  HexColor,
+-} from './utils/style.props';
+-import { convertColor, convertCommonStyle } from './utils/style.utils';
+-
+-interface TextWidgetInternalProps extends CommonInternalProps {
+-  text: string;
+-  fontSize: number;
+-  allowFontScaling: boolean;
+-  fontFamily?: string;
+-  fontStyle?: 'normal' | 'italic';
+-  fontWeight?:
+-    | 'normal'
+-    | 'bold'
+-    | '100'
+-    | '200'
+-    | '300'
+-    | '400'
+-    | '500'
+-    | '600'
+-    | '700'
+-    | '800'
+-    | '900';
+-  adjustsFontSizeToFit?: boolean;
+-  textAlign?: 'center' | 'left' | 'right';
+-  letterSpacing?: number;
+-  lineHeight?: number;
+-  lineSpacingExtra?: number;
+-  color?: HexColor;
+-  shadow?: {
+-    radius: number;
+-    dx: number;
+-    dy: number;
+-    color: HexColor;
+-  };
+-  truncate?: 'START' | 'MIDDLE' | 'END';
+-  maxLines?: number;
+-}
+-
+-export interface TextWidgetStyle extends CommonStyleProps {
+-  color?: ColorProp;
+-  fontSize?: number;
+-  fontFamily?: string | undefined;
+-  fontStyle?: 'normal' | 'italic';
+-  /**
+-   * Specifies font weight. The values 'normal' and 'bold' are supported
+-   * for most fonts. Not all fonts have a variant for each of the numeric
+-   * values, in that case the closest one is chosen.
+-   */
+-  fontWeight?:
+-    | 'normal'
+-    | 'bold'
+-    | '100'
+-    | '200'
+-    | '300'
+-    | '400'
+-    | '500'
+-    | '600'
+-    | '700'
+-    | '800'
+-    | '900';
+-  adjustsFontSizeToFit?: boolean;
+-  textAlign?: 'center' | 'left' | 'right';
+-  letterSpacing?: number;
+-  lineHeight?: number;
+-  lineSpacingExtra?: number;
+-
+-  textShadowColor?: ColorProp;
+-  textShadowRadius?: number;
+-  textShadowOffset?: { height: number; width: number };
+-}
+-
+-export interface TextWidgetProps extends ClickActionProps {
+-  style?: TextWidgetStyle;
+-
+-  /**
+-   * Text to show
+-   */
+-  text: string;
+-
+-  /**
+-   * How to truncate the text if it cannot fit
+-   */
+-  truncate?: 'START' | 'MIDDLE' | 'END';
+-
+-  /**
+-   * Maximum number of lines to if text overflows in next line
+-   */
+-  maxLines?: number;
+-
+-  /**
+-   * Specifies whether fonts should scale to respect Text Size accessibility settings.
+-   * @default true
+-   */
+-  allowFontScaling?: boolean;
+-}
+-
+-export function TextWidget(_: TextWidgetProps) {
+-  return null;
+-}
+-TextWidget.convertProps = (props: TextWidgetProps): TextWidgetInternalProps => {
+-  return {
+-    ...convertCommonStyle(props.style ?? {}),
+-    ...convertClickAction(props),
+-    text: props.text,
+-    fontSize: props.style?.fontSize ?? 12,
+-    allowFontScaling: props.allowFontScaling ?? true,
+-    ...(props.style?.fontFamily ? { fontFamily: props.style.fontFamily } : {}),
+-    ...(props.style?.fontStyle ? { fontStyle: props.style.fontStyle } : {}),
+-    ...(props.style?.fontWeight ? { fontWeight: props.style.fontWeight } : {}),
+-    ...(props.style?.textAlign ? { textAlign: props.style.textAlign } : {}),
+-    ...copyNumberStyleProp(props.style ?? {}, 'letterSpacing'),
+-    ...copyNumberStyleProp(props.style ?? {}, 'lineHeight'),
+-    ...copyNumberStyleProp(props.style ?? {}, 'lineSpacingExtra'),
+-    ...(props.style?.adjustsFontSizeToFit
+-      ? { adjustsFontSizeToFit: props.style.adjustsFontSizeToFit }
+-      : {}),
+-    ...(props.style?.color ? { color: convertColor(props.style.color) } : {}),
+-    ...buildTextShadow(props.style ?? {}),
+-    ...(props.truncate ? { truncate: props.truncate } : {}),
+-    ...(props.maxLines ? { maxLines: props.maxLines } : {}),
+-  };
+-};
+-TextWidget.__name__ = 'TextWidget';
+-
+-function copyNumberStyleProp(
+-  style: TextWidgetStyle,
+-  propName: 'lineHeight' | 'lineSpacingExtra' | 'letterSpacing'
+-): Partial<TextWidgetInternalProps> {
+-  if (style[propName] !== undefined) {
+-    return { [propName]: style[propName] };
+-  }
+-
+-  return {};
+-}
+-
+-function buildTextShadow(
+-  style: TextWidgetStyle
+-): Partial<TextWidgetInternalProps> {
+-  if (
+-    'textShadowColor' in style ||
+-    'textShadowRadius' in style ||
+-    'textShadowOffset' in style
+-  ) {
+-    return {
+-      shadow: {
+-        radius: style.textShadowRadius ?? 0,
+-        dx: style.textShadowOffset?.width ?? 0,
+-        dy: style.textShadowOffset?.height ?? 0,
+-        color: convertColor(style.textShadowColor ?? '#fff'),
+-      },
+-    };
+-  }
+-
+-  return {};
+-}
++import {
++  convertClickAction,
++  type ClickActionProps,
++} from './utils/click-action';
++import type { CommonInternalProps } from './utils/common-internal.props';
++import type {
++  ColorProp,
++  CommonStyleProps,
++  HexColor,
++} from './utils/style.props';
++import { convertColor, convertCommonStyle } from './utils/style.utils';
++
++interface TextWidgetInternalProps extends CommonInternalProps {
++  text: string;
++  fontSize: number;
++  allowFontScaling: boolean;
++  fontFamily?: string;
++  fontStyle?: 'normal' | 'italic';
++  fontWeight?:
++    | 'normal'
++    | 'bold'
++    | '100'
++    | '200'
++    | '300'
++    | '400'
++    | '500'
++    | '600'
++    | '700'
++    | '800'
++    | '900';
++  adjustsFontSizeToFit?: boolean;
++  textAlign?: 'center' | 'left' | 'right';
++  letterSpacing?: number;
++  lineHeight?: number;
++  lineSpacingExtra?: number;
++  color?: HexColor;
++  shadow?: {
++    radius: number;
++    dx: number;
++    dy: number;
++    color: HexColor;
++  };
++  truncate?: 'START' | 'MIDDLE' | 'END';
++  maxLines?: number;
++  countdownTo?: number;
++  countdownFormat?: string;
++}
++
++export interface TextWidgetStyle extends CommonStyleProps {
++  color?: ColorProp;
++  fontSize?: number;
++  fontFamily?: string | undefined;
++  fontStyle?: 'normal' | 'italic';
++  /**
++   * Specifies font weight. The values 'normal' and 'bold' are supported
++   * for most fonts. Not all fonts have a variant for each of the numeric
++   * values, in that case the closest one is chosen.
++   */
++  fontWeight?:
++    | 'normal'
++    | 'bold'
++    | '100'
++    | '200'
++    | '300'
++    | '400'
++    | '500'
++    | '600'
++    | '700'
++    | '800'
++    | '900';
++  adjustsFontSizeToFit?: boolean;
++  textAlign?: 'center' | 'left' | 'right';
++  letterSpacing?: number;
++  lineHeight?: number;
++  lineSpacingExtra?: number;
++
++  textShadowColor?: ColorProp;
++  textShadowRadius?: number;
++  textShadowOffset?: { height: number; width: number };
++}
++
++export interface TextWidgetProps extends ClickActionProps {
++  style?: TextWidgetStyle;
++
++  /**
++   * Text to show
++   */
++  text: string;
++
++  /**
++   * How to truncate the text if it cannot fit
++   */
++  truncate?: 'START' | 'MIDDLE' | 'END';
++
++  /**
++   * Maximum number of lines to if text overflows in next line
++   */
++  maxLines?: number;
++
++  /**
++   * Specifies whether fonts should scale to respect Text Size accessibility settings.
++   * @default true
++   */
++  allowFontScaling?: boolean;
++
++  /**
++   * Epoch ms. If set, a native Chronometer counting down to this moment is drawn
++   * in place of the text (the text is only used for layout and drawn transparent).
++   * Only the first such TextWidget gets a countdown (see RNWidget.addCountdowns).
++   */
++  countdownTo?: number;
++
++  /**
++   * Chronometer format string (`%s` = remaining time as H:MM:SS or MM:SS), e.g. `0%.4s` -> "02:36".
++   */
++  countdownFormat?: string;
++}
++
++export function TextWidget(_: TextWidgetProps) {
++  return null;
++}
++TextWidget.convertProps = (props: TextWidgetProps): TextWidgetInternalProps => {
++  return {
++    ...convertCommonStyle(props.style ?? {}),
++    ...convertClickAction(props),
++    text: props.text,
++    fontSize: props.style?.fontSize ?? 12,
++    allowFontScaling: props.allowFontScaling ?? true,
++    ...(props.style?.fontFamily ? { fontFamily: props.style.fontFamily } : {}),
++    ...(props.style?.fontStyle ? { fontStyle: props.style.fontStyle } : {}),
++    ...(props.style?.fontWeight ? { fontWeight: props.style.fontWeight } : {}),
++    ...(props.style?.textAlign ? { textAlign: props.style.textAlign } : {}),
++    ...copyNumberStyleProp(props.style ?? {}, 'letterSpacing'),
++    ...copyNumberStyleProp(props.style ?? {}, 'lineHeight'),
++    ...copyNumberStyleProp(props.style ?? {}, 'lineSpacingExtra'),
++    ...(props.style?.adjustsFontSizeToFit
++      ? { adjustsFontSizeToFit: props.style.adjustsFontSizeToFit }
++      : {}),
++    ...(props.style?.color ? { color: convertColor(props.style.color) } : {}),
++    ...buildTextShadow(props.style ?? {}),
++    ...(props.truncate ? { truncate: props.truncate } : {}),
++    ...(props.maxLines ? { maxLines: props.maxLines } : {}),
++    ...(props.countdownTo ? { countdownTo: props.countdownTo } : {}),
++    ...(props.countdownFormat ? { countdownFormat: props.countdownFormat } : {}),
++  };
++};
++TextWidget.__name__ = 'TextWidget';
++
++function copyNumberStyleProp(
++  style: TextWidgetStyle,
++  propName: 'lineHeight' | 'lineSpacingExtra' | 'letterSpacing'
++): Partial<TextWidgetInternalProps> {
++  if (style[propName] !== undefined) {
++    return { [propName]: style[propName] };
++  }
++
++  return {};
++}
++
++function buildTextShadow(
++  style: TextWidgetStyle
++): Partial<TextWidgetInternalProps> {
++  if (
++    'textShadowColor' in style ||
++    'textShadowRadius' in style ||
++    'textShadowOffset' in style
++  ) {
++    return {
++      shadow: {
++        radius: style.textShadowRadius ?? 0,
++        dx: style.textShadowOffset?.width ?? 0,
++        dy: style.textShadowOffset?.height ?? 0,
++        color: convertColor(style.textShadowColor ?? '#fff'),
++      },
++    };
++  }
++
++  return {};
++}

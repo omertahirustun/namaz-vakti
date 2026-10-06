@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "backgroundColor": "#EEF7F5",
+    "backgroundColor": "#E6EBF7",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.omertahirustun.namazvakti",
@@ -23,7 +23,7 @@
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
       ],
-      "versionCode": 7,
+      "versionCode": 21,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
@@ -40,7 +40,8 @@
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
-          "color": "#0A8C77"
+          "color": "#0A8C77",
+          "sounds": ["./assets/sounds/vakit.wav"]
         }
       ],
       [
@@ -53,7 +54,44 @@
         }
       ],
       "expo-font",
-      "@maplibre/maplibre-react-native"
+      "@maplibre/maplibre-react-native",
+      [
+        "react-native-android-widget",
+        {
+          "fonts": [
+            "./node_modules/@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf",
+            "./node_modules/@expo-google-fonts/inter/500Medium/Inter_500Medium.ttf",
+            "./node_modules/@expo-google-fonts/inter/600SemiBold/Inter_600SemiBold.ttf",
+            "./node_modules/@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf"
+          ],
+          "widgets": [
+            {
+              "name": "PrayerTimes",
+              "label": "Namaz Vakitleri",
+              "description": "Sıradaki vakit ve günün vakitleri, seçili temayla",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "previewImage": "./assets/widget/preview.png",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "PrayerCountdown",
+              "label": "Vakte Kalan",
+              "description": "Sıradaki vakte kalan süre (saat:dakika)",
+              "minWidth": "40dp",
+              "minHeight": "40dp",
+              "targetCellWidth": 1,
+              "targetCellHeight": 1,
+              "resizeMode": "horizontal|vertical",
+              "previewImage": "./assets/widget/preview-countdown.png",
+              "updatePeriodMillis": 1800000
+            }
+          ]
+        }
+      ]
     ],
     "icon": "./assets/icon.png",
     "web": {

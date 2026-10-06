@@ -47,6 +47,16 @@ export interface ThemeDefinition {
 
 export const radius = 16;
 
+/**
+ * Fotoğraflı temalarda (zemin şeffaf) kartın dışında, doğrudan fotoğrafın üstünde duran yazılar için gölge;
+ * örtü hafif olduğundan gölgesiz yazı kalabalık fotoğrafta kayboluyor. Düz temada boş döner.
+ */
+export function photoTextShadow(colors: ThemeColors) {
+  return colors.bg === 'transparent'
+    ? { textShadowColor: 'rgba(0,0,0,0.85)', textShadowRadius: 6, textShadowOffset: { width: 0, height: 1 } }
+    : {};
+}
+
 /** Her vaktin kendi rengi (ikonlarda) — temalar arasında sabit, fotoğraflı kartların üstünde de okunur kalır */
 const prayerColors: Record<PrayerKey, string> = {
   Fajr: '#6366F1',
@@ -61,13 +71,14 @@ const defaultTheme: ThemeDefinition = {
   id: 'default',
   label: 'Varsayılan Tema',
   colors: {
-    bg: '#EEF7F5',
+    // Sponsor (Adezyon Medya) logosunun lacivert-mavisi (#213A9F) ve beyazı: zemin bu mavinin çok açık tonu
+    bg: '#E6EBF7',
     card: '#FFFFFF',
-    cardAlt: '#F1F8F6',
-    border: '#D5E9E3',
-    text: '#15332D',
-    muted: '#6E8C85',
-    accent: '#0A8C77',
+    cardAlt: '#EEF1FA',
+    border: '#C5CEEC',
+    text: '#141F4D',
+    muted: '#5A6690',
+    accent: '#213A9F',
     onAccent: '#FFFFFF',
     onHero: '#FFFFFF',
     highlight: '#F59E0B',
@@ -76,7 +87,7 @@ const defaultTheme: ThemeDefinition = {
     dangerBg: '#FDECEA',
     history: '#7C3AED',
   },
-  heroGradient: ['#0EA58B', '#1FB6C9'],
+  heroGradient: ['#3A55C8', '#1B2D82'],
   prayerColors,
   statusBar: 'dark',
 };
@@ -86,8 +97,8 @@ const meccaTheme: ThemeDefinition = {
   label: 'Mescid-i Haram',
   colors: {
     bg: 'transparent',
-    card: 'rgba(17,15,12,0.8)',
-    cardAlt: 'rgba(38,32,18,0.68)',
+    card: 'rgba(17,15,12,0.7)',
+    cardAlt: 'rgba(38,32,18,0.58)',
     border: 'rgba(212,175,110,0.35)',
     text: '#F6EFE2',
     muted: '#C7B89C',
@@ -103,7 +114,7 @@ const meccaTheme: ThemeDefinition = {
   heroGradient: ['#A07834', '#5C4214'],
   prayerColors,
   background: require('../assets/themes/mecca.jpg'),
-  overlay: 'rgba(5,4,2,0.35)',
+  overlay: 'rgba(5,4,2,0.22)',
   thumbnail: require('../assets/themes/thumbs/mecca.jpg'),
   statusBar: 'light',
 };
@@ -113,8 +124,8 @@ const medinaTheme: ThemeDefinition = {
   label: 'Mescid-i Nebevi',
   colors: {
     bg: 'transparent',
-    card: 'rgba(23,30,24,0.78)',
-    cardAlt: 'rgba(33,42,31,0.66)',
+    card: 'rgba(23,30,24,0.68)',
+    cardAlt: 'rgba(33,42,31,0.56)',
     border: 'rgba(199,216,186,0.3)',
     text: '#F3EFE2',
     muted: '#C9D2C0',
@@ -130,7 +141,7 @@ const medinaTheme: ThemeDefinition = {
   heroGradient: ['#2F6E3D', '#4F8F58'],
   prayerColors,
   background: require('../assets/themes/medina.jpg'),
-  overlay: 'rgba(5,10,6,0.3)',
+  overlay: 'rgba(5,10,6,0.2)',
   thumbnail: require('../assets/themes/thumbs/medina.jpg'),
   statusBar: 'light',
 };
@@ -140,8 +151,8 @@ const aqsaTheme: ThemeDefinition = {
   label: 'Mescid-i Aksa',
   colors: {
     bg: 'transparent',
-    card: 'rgba(12,22,44,0.8)',
-    cardAlt: 'rgba(24,38,70,0.68)',
+    card: 'rgba(12,22,44,0.7)',
+    cardAlt: 'rgba(24,38,70,0.58)',
     border: 'rgba(214,180,92,0.35)',
     text: '#F4F1E6',
     muted: '#B9C4DA',
@@ -157,10 +168,9 @@ const aqsaTheme: ThemeDefinition = {
   heroGradient: ['#1F4C8F', '#B08A2E'],
   prayerColors,
   background: require('../assets/themes/aqsa.jpg'),
-  overlay: 'rgba(8,16,36,0.45)',
+  overlay: 'rgba(8,16,36,0.22)',
   thumbnail: require('../assets/themes/thumbs/aqsa.jpg'),
   statusBar: 'light',
-  photoCredit: { author: 'Godot13', license: 'CC BY-SA 4.0' },
 };
 
 export const THEMES: Record<ThemeId, ThemeDefinition> = {
@@ -174,7 +184,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
 export const THEME_ORDER: ThemeId[] = ['mecca', 'medina', 'aqsa', 'default'];
 
 /** İlk açılışta ve kayıtlı tema artık listede yoksa kullanılan tema */
-export const DEFAULT_THEME_ID: ThemeId = 'mecca';
+export const DEFAULT_THEME_ID: ThemeId = 'default';
 
 export function isThemeId(v: unknown): v is ThemeId {
   return v === 'default' || v === 'mecca' || v === 'medina' || v === 'aqsa';

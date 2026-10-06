@@ -14,6 +14,7 @@ import HomeScreen from './src/screens/HomeScreen';
 import MosquesScreen from './src/screens/MosquesScreen';
 import QiblaScreen from './src/screens/QiblaScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import WidgetSync from './src/widget/WidgetSync';
 
 const Tab = createBottomTabNavigator();
 
@@ -36,6 +37,7 @@ export default function App() {
       <ThemeProvider>
         <PrayerProvider>
           <AppShell fontsReady={fontsReady} />
+          <WidgetSync />
         </PrayerProvider>
       </ThemeProvider>
     </SafeAreaProvider>

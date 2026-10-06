@@ -1,0 +1,19 @@
+import { requireOptionalNativeModule } from 'expo';
+import type { EventSubscription } from 'expo-modules-core';
+
+export interface CompassHeading {
+  /** Gerçek kuzeye göre yön (0–360°), yerelde süzülmüş */
+  heading: number;
+  /** 0 güvenilmez, 1 düşük, 2 orta, 3 yüksek (manyetometre kalibrasyonu) */
+  accuracy: number;
+}
+
+interface CompassNative {
+  isAvailable(): boolean;
+  start(latitude: number, longitude: number): void;
+  stop(): void;
+  addListener(event: 'onHeading', listener: (e: CompassHeading) => void): EventSubscription;
+}
+
+// Expo Go'da ve iOS'ta yok; Kıble ekranı o zaman expo-location'ın yön verisine düşer.
+export default requireOptionalNativeModule<CompassNative>('Compass');

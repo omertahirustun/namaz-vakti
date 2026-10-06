@@ -5,7 +5,13 @@ import { Platform } from 'react-native';
 import { DayTimes, PRAYER_KEYS, PRAYER_NAMES_TR, Settings } from './types';
 import { dateKey, toDate } from './time';
 
-const CHANNEL_ID = 'prayer-times';
+// Android kanal ayarları (ses, rozet vb.) oluşturulduktan sonra değiştirilemez; bu yüzden her değişiklikte yeni kimlik.
+// v3: kendi zil sesimiz (assets/sounds/vakit.wav, burada sentezlendi; app.json'da expo-notifications "sounds").
+const CHANNEL_ID = 'prayer-times-v3';
+const OLD_CHANNEL_IDS = ['prayer-times', 'prayer-times-v2'];
+const SOUND = 'vakit.wav';
+/** Bildirim, vakit girdikten bu kadar sonra çekmeceden kendiliğinden kalkar (yerel yama: data.dismissAt). */
+const DISMISS_AFTER_MS = 60 * 60_000;
 // iOS en fazla 64 yerel bildirim planlamaya izin verir (~12 gün). Android'de
 // sınır uygulama başına 500 alarm; 30 günü rahat karşılar.
 const MAX_SCHEDULED = Platform.OS === 'ios' ? 60 : 200;
@@ -24,8 +30,12 @@ export async function ensureNotificationPermission(): Promise<boolean> {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
       name: 'Namaz vakitleri',
       importance: Notifications.AndroidImportance.HIGH,
-      sound: 'default',
+      sound: SOUND,
+      vibrationPattern: [0, 250, 200, 250],
+      // Uygulama simgesinde "1, 2…" sayacı/noktası çıkmasın
+      showBadge: false,
     });
+    for (const id of OLD_CHANNEL_IDS) await Notifications.deleteNotificationChannelAsync(id).catch(() => {});
   }
   const current = await Notifications.getPermissionsAsync();
   if (current.granted) return true;
@@ -46,6 +56,7 @@ export function rescheduleNotifications(days: DayTimes[], settings: Settings): P
 
 async function reschedule(days: DayTimes[], settings: Settings): Promise<number> {
   await Notifications.cancelAllScheduledNotificationsAsync();
+  await dismissStaleNotifications();
   if (!settings.notificationsEnabled) return 0;
   if (!(await ensureNotificationPermission())) return 0;
 
@@ -57,7 +68,8 @@ async function reschedule(days: DayTimes[], settings: Settings): Promise<number>
   for (const day of upcoming) {
     for (const key of PRAYER_KEYS) {
       if (!settings.enabled[key]) continue;
-      const fireAt = new Date(toDate(day.date, day.times[key]).getTime() - settings.offsetMinutes * 60_000);
+      const prayerAt = toDate(day.date, day.times[key]).getTime();
+      const fireAt = new Date(prayerAt - settings.offsetMinutes * 60_000);
       if (fireAt.getTime() <= now.getTime()) continue;
       if (count >= MAX_SCHEDULED) return count;
 
@@ -69,7 +81,8 @@ async function reschedule(days: DayTimes[], settings: Settings): Promise<number>
             settings.offsetMinutes > 0
               ? `${name} vaktine ${settings.offsetMinutes} dakika kaldı (${day.times[key]})`
               : `${name} vakti girdi (${day.times[key]})`,
-          sound: 'default',
+          sound: SOUND,
+          data: { dismissAt: prayerAt + DISMISS_AFTER_MS },
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -81,6 +94,24 @@ async function reschedule(days: DayTimes[], settings: Settings): Promise<number>
     }
   }
   return count;
+}
+
+/**
+ * Süresi geçmiş (ya da yamadan önce kurulmuş, dismissAt'i olmayan) vakit bildirimlerini çekmeceden kaldırır,
+ * uygulama simgesindeki sayacı sıfırlar.
+ */
+async function dismissStaleNotifications(): Promise<void> {
+  try {
+    const now = Date.now();
+    const shown = await Notifications.getPresentedNotificationsAsync();
+    for (const n of shown) {
+      const dismissAt = Number(n.request.content.data?.dismissAt ?? 0);
+      if (dismissAt <= now) await Notifications.dismissNotificationAsync(n.request.identifier);
+    }
+    await Notifications.setBadgeCountAsync(0);
+  } catch {
+    // sayaç/çekmece temizliği başarısız olsa da planlama sürsün
+  }
 }
 
 /** Android 12+ (API 31): "Alarmlar ve hatırlatıcılar" izni; yoksa bildirimler gecikebilir. */

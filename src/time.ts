@@ -57,12 +57,27 @@ function previousIsha(day: DayTimes): NextPrayer {
   return { key: 'Isha', at };
 }
 
+/** Son 10 dakika kırmızımsı, son 5 dakika "acil" sayılır (renk/boy, widget'lar da). */
+export const SOON_MS = 10 * 60_000;
+export const URGENT_MS = 5 * 60_000;
+
+export type CountdownStage = 'normal' | 'soon' | 'urgent';
+
+export function countdownStage(ms: number): CountdownStage {
+  // Saniyeye göre: tam 10:00 kala da son 10 dakika rengine geçilir
+  const sec = Math.floor(ms / 1000);
+  if (sec < URGENT_MS / 1000) return 'urgent';
+  if (sec <= SOON_MS / 1000) return 'soon';
+  return 'normal';
+}
+
+/** "02:36" (saat:dakika, aşağı yuvarlanmış); 1 saatten az kalınca dakika:saniye "59:59", "09:59"… */
 export function formatCountdown(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);
   const s = total % 60;
-  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+  return h > 0 ? `${pad(h)}:${pad(m)}` : `${pad(m)}:${pad(s)}`;
 }
 
 const MONTHS_TR = [

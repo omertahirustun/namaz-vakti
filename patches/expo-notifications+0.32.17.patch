@@ -1,0 +1,16 @@
+diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
+index 610d303..eae013b 100644
+--- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
++++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
+@@ -110,6 +110,11 @@ open class ExpoNotificationBuilder(
+ 
+     color?.let { builder.color = it.toInt() }
+     notificationContent.badgeCount?.toInt()?.let { builder.setNumber(it) }
++    // Namaz Vakti yaması: data.dismissAt (epoch ms) verilmişse bildirim o anda kendiliğinden kalkar,
++    // vakit bildirimleri bildirim çekmecesinde birikmez.
++    content.body?.optLong("dismissAt", 0L)?.takeIf { it > 0 }?.let { dismissAt ->
++      builder.setTimeoutAfter(max(dismissAt - System.currentTimeMillis(), 60_000L))
++    }
+     notificationContent.categoryId?.let { addActionsToBuilder(builder, it) }
+ 
+     applySoundsAndVibrations(content, builder)

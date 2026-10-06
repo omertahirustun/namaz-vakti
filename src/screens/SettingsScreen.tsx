@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { needsExactAlarmSetting, openBatterySettings, openExactAlarmSettings } from '../notifications';
 import { usePrayer } from '../PrayerContext';
 import { useTheme } from '../ThemeContext';
-import { radius, THEME_ORDER, THEMES, ThemeColors } from '../theme';
+import { photoTextShadow, radius, THEME_ORDER, ThemeColors, THEMES } from '../theme';
 import { CALC_METHODS, PRAYER_KEYS, PRAYER_NAMES_TR } from '../types';
 
 const OFFSETS = [0, 5, 10, 15, 20, 30];
@@ -37,7 +37,9 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>Ayarlar</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.title}>Ayarlar</Text>
+        </View>
 
         <Text style={styles.section}>Konum</Text>
         <TouchableOpacity style={styles.card} onPress={onLocate}>
@@ -180,7 +182,8 @@ function makeStyles(colors: ThemeColors) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.bg },
     content: { padding: 20, paddingBottom: 50 },
-    title: { color: colors.text, fontSize: 24, fontWeight: '700' },
+    headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    title: { color: colors.text, fontSize: 24, fontWeight: '700', ...photoTextShadow(colors) },
     section: { color: colors.accent, fontSize: 13, fontWeight: '700', marginTop: 24, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
     subsection: { color: colors.muted, fontSize: 13, marginTop: 14, marginBottom: 8 },
     card: { backgroundColor: colors.card, borderRadius: radius, paddingHorizontal: 16, paddingVertical: 6, borderWidth: 1, borderColor: colors.border, marginBottom: 8 },

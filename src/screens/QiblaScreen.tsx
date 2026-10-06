@@ -1,21 +1,24 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, StyleSheet, View } from 'react-native';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, StyleSheet, useWindowDimensions, View } from 'react-native';
+import Svg, { Circle, Line, Path, Polygon } from 'react-native-svg';
 import Text from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import Compass from '../../modules/compass';
 import { usePrayer } from '../PrayerContext';
-import { qiblaBearing } from '../location';
+import { kaabaDistanceKm, qiblaBearing } from '../location';
 import { useTheme } from '../ThemeContext';
-import { ThemeColors } from '../theme';
+import { photoTextShadow, radius, ThemeColors } from '../theme';
 
 const SIZE = 280;
 
-/** Açısal yumuşatma (EMA) katsayısı — düşük değer daha yumuşak ama daha yavaş tepki verir. */
+/** Yedek yol (expo-location) için açısal yumuşatma (EMA) katsayısı — yerel modül kendisi süzer. */
 const HEADING_ALPHA = 0.2;
-/** Bu kadar küçük değişimler titreşim sayılıp yok sayılır (derece). */
+/** Yedek yolda bu kadar küçük değişimler titreşim sayılıp yok sayılır (derece). */
 const DEAD_BAND_DEG = 1;
-/** Pusula iğnesinin her güncellemede yumuşakça dönmesi için animasyon süresi. */
+/** Yedek yolda iğnenin seyrek gelen güncellemeler arasında yumuşakça dönmesi için animasyon süresi. */
 const ROTATE_DURATION_MS = 150;
 /** Durum metninin (derece/aligned) ekranda güncellenme sıklığı — gereksiz render'ı önler. */
 const DISPLAY_THROTTLE_MS = 200;
@@ -25,14 +28,88 @@ function angleDiffSigned(a: number, b: number) {
   return ((b - a + 540) % 360) - 180;
 }
 
-const TICK_DEGREES = Array.from({ length: 36 }, (_, i) => i * 10);
-const CARDINALS: { deg: number; label: string; accent?: boolean }[] = [
-  { deg: 0, label: 'K', accent: true },
+/** Kadranın çentikleri: her 2°, 10° ve 30°'de uzun, ana yönlerde en uzun. */
+const TICKS = Array.from({ length: 180 }, (_, i) => i * 2);
+const CARDINALS = [
+  { deg: 0, label: 'K' },
   { deg: 90, label: 'D' },
   { deg: 180, label: 'G' },
   { deg: 270, label: 'B' },
 ];
-const DEGREE_LABEL_DEGREES = [30, 60, 120, 150, 210, 240, 300, 330];
+const DEGREE_LABELS = Array.from({ length: 12 }, (_, i) => i * 30);
+const DIRECTIONS_8 = ['K', 'KD', 'D', 'GD', 'G', 'GB', 'B', 'KB'];
+/** Telefon yönü ile kıble arasındaki dilimin rengi (kıbleye dönünce yeşile döner) */
+const ARC_COLOR = '#D4A055';
+/** Bu kadar dereceden yakınsa "kıbleye dönük" sayılır. */
+const ALIGNED_DEG = 5;
+
+function directionLabel(deg: number) {
+  return DIRECTIONS_8[Math.round(deg / 45) % 8];
+}
+
+/** 2424 -> "2.424" */
+function formatKm(km: number) {
+  return String(Math.round(km)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+/** Kadran geometrisi (merkezden yarıçaplar), boyuta göre. */
+function dialGeometry(size: number) {
+  const c = size / 2;
+  const tickOuter = c - 50;
+  const arcOuter = tickOuter - 24;
+  return {
+    c,
+    numberR: c - 20,
+    tickOuter,
+    arcOuter,
+    arcInner: arcOuter - c * 0.26,
+    cardinalR: tickOuter - 46,
+  };
+}
+
+/** Merkezden r uzaklıkta, tepeden saat yönünde deg derecedeki nokta. */
+function polar(c: number, r: number, deg: number) {
+  const a = (deg * Math.PI) / 180;
+  return { x: c + r * Math.sin(a), y: c - r * Math.cos(a) };
+}
+
+/** Tepeden (0°) delta derecesine uzanan halka dilimi. */
+function arcPath(c: number, ro: number, ri: number, delta: number) {
+  const sweep = delta > 0 ? 1 : 0;
+  const large = Math.abs(delta) > 180 ? 1 : 0;
+  const o0 = polar(c, ro, 0);
+  const o1 = polar(c, ro, delta);
+  const i1 = polar(c, ri, delta);
+  const i0 = polar(c, ri, 0);
+  return `M${o0.x} ${o0.y} A${ro} ${ro} 0 ${large} ${sweep} ${o1.x} ${o1.y} L${i1.x} ${i1.y} A${ri} ${ri} 0 ${large} ${1 - sweep} ${i0.x} ${i0.y} Z`;
+}
+
+/**
+ * Ekranın tepesinden (telefonun baktığı yön) kıbleye uzanan dilim. Pusula ~60 Hz veri gönderdiği için kendi
+ * state'iyle yalnız bu katman yeniden çizilir; ana ekran saniyede birkaç kez güncellenir.
+ */
+const QiblaArc = memo(function QiblaArc({
+  size,
+  color,
+  register,
+}: {
+  size: number;
+  color: string;
+  register: (setter: (delta: number) => void) => void;
+}) {
+  const [delta, setDelta] = useState<number | null>(null);
+  useEffect(() => {
+    register((d) => setDelta((prev) => (prev !== null && Math.abs(prev - d) < 0.4 ? prev : d)));
+  }, [register]);
+  const g = dialGeometry(size);
+  return (
+    <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
+      {delta !== null && Math.abs(delta) >= 0.5 ? (
+        <Path d={arcPath(g.c, g.arcOuter, g.arcInner, delta)} fill={color} opacity={0.9} />
+      ) : null}
+    </Svg>
+  );
+});
 
 export default function QiblaScreen() {
   const { place } = usePrayer();
@@ -41,8 +118,21 @@ export default function QiblaScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [displayHeading, setDisplayHeading] = useState<number | null>(null);
   const [denied, setDenied] = useState(false);
+  /** Manyetometre kalibrasyonu düşükse kullanıcıya 8 çizmesi söylenir (yalnız yerel modülde bilinir) */
+  const [lowAccuracy, setLowAccuracy] = useState(false);
 
   const bearing = useMemo(() => qiblaBearing(place.latitude, place.longitude), [place]);
+  const distanceKm = useMemo(() => kaabaDistanceKm(place.latitude, place.longitude), [place]);
+  const { width } = useWindowDimensions();
+  const size = Math.min(width - 40, 340);
+
+  // Kıble dilimi her sensör okumasında güncellenir (bkz. QiblaArc)
+  const bearingRef = useRef(bearing);
+  bearingRef.current = bearing;
+  const arcSetterRef = useRef<((delta: number) => void) | null>(null);
+  const registerArc = useCallback((setter: (delta: number) => void) => {
+    arcSetterRef.current = setter;
+  }, []);
 
   // Animasyonlu, "unwrap" edilmiş (0/360 sarmayan) birikimli açı. Dial bunun
   // negatifi kadar döner ki K harfi her zaman gerçek kuzeyi göstersin.
@@ -54,141 +144,257 @@ export default function QiblaScreen() {
   const accumulatedRef = useRef(0);
   const lastDisplayUpdateRef = useRef(0);
 
-  const handleHeading = useCallback((h: Location.LocationHeadingObject) => {
-    const raw = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
-    if (raw == null || Number.isNaN(raw) || raw < 0) return;
+  const resetHeading = useCallback(() => {
+    filteredSinRef.current = null;
+    filteredCosRef.current = null;
+    prevNormalizedRef.current = null;
+  }, []);
 
-    const rad = (raw * Math.PI) / 180;
-    const sinR = Math.sin(rad);
-    const cosR = Math.cos(rad);
-
-    if (filteredSinRef.current === null || filteredCosRef.current === null) {
-      filteredSinRef.current = sinR;
-      filteredCosRef.current = cosR;
-    } else {
-      filteredSinRef.current += HEADING_ALPHA * (sinR - filteredSinRef.current);
-      filteredCosRef.current += HEADING_ALPHA * (cosR - filteredCosRef.current);
-    }
-
-    let filteredDeg = (Math.atan2(filteredSinRef.current, filteredCosRef.current) * 180) / Math.PI;
-    if (filteredDeg < 0) filteredDeg += 360;
-
-    if (prevNormalizedRef.current === null) {
-      // İlk okuma: doğrudan başlat, animasyona gerek yok.
-      prevNormalizedRef.current = filteredDeg;
-      accumulatedRef.current = filteredDeg;
-      headingAnim.setValue(accumulatedRef.current);
-      setDisplayHeading(filteredDeg);
-      lastDisplayUpdateRef.current = Date.now();
-      return;
-    }
-
-    const delta = angleDiffSigned(prevNormalizedRef.current, filteredDeg);
-    if (Math.abs(delta) < DEAD_BAND_DEG) return; // küçük titreşimleri yok say
-
-    prevNormalizedRef.current = filteredDeg;
-    accumulatedRef.current += delta;
-
-    Animated.timing(headingAnim, {
-      toValue: accumulatedRef.current,
-      duration: ROTATE_DURATION_MS,
-      useNativeDriver: true,
-    }).start();
-
-    const now = Date.now();
-    if (now - lastDisplayUpdateRef.current >= DISPLAY_THROTTLE_MS) {
-      lastDisplayUpdateRef.current = now;
-      setDisplayHeading(filteredDeg);
-    }
-  }, [headingAnim]);
-
-  useEffect(() => {
-    let sub: Location.LocationSubscription | undefined;
-    let cancelled = false;
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setDenied(true);
+  /** Süzülmüş yönü kadrana uygular. `animate` yalnız seyrek veri gelen yedek yolda kullanılır. */
+  const applyHeading = useCallback(
+    (deg: number, animate: boolean) => {
+      const now = Date.now();
+      arcSetterRef.current?.(angleDiffSigned(deg, bearingRef.current));
+      if (prevNormalizedRef.current === null) {
+        // İlk okuma: doğrudan başlat, animasyona gerek yok.
+        prevNormalizedRef.current = deg;
+        accumulatedRef.current = deg;
+        headingAnim.setValue(deg);
+        setDisplayHeading(deg);
+        lastDisplayUpdateRef.current = now;
         return;
       }
-      const s = await Location.watchHeadingAsync(handleHeading);
-      if (cancelled) s.remove();
-      else sub = s;
-    })();
-    return () => {
-      cancelled = true;
-      sub?.remove();
-    };
-  }, [handleHeading]);
+      const delta = angleDiffSigned(prevNormalizedRef.current, deg);
+      prevNormalizedRef.current = deg;
+      accumulatedRef.current += delta;
+      if (animate) {
+        Animated.timing(headingAnim, {
+          toValue: accumulatedRef.current,
+          duration: ROTATE_DURATION_MS,
+          useNativeDriver: true,
+        }).start();
+      } else {
+        // Yerel modül ~60 Hz gönderiyor; her kareyi doğrudan yazmak animasyondan daha akıcı
+        headingAnim.setValue(accumulatedRef.current);
+      }
+      if (now - lastDisplayUpdateRef.current >= DISPLAY_THROTTLE_MS) {
+        lastDisplayUpdateRef.current = now;
+        setDisplayHeading(deg);
+      }
+    },
+    [headingAnim],
+  );
 
-  // Dial (harf + çentik + derece halkası) telefonla birlikte döner: kadran
-  // birikimli açının tersi kadar döndürülür, böylece K her zaman gerçek
-  // kuzeyi gösterir. Doğrusal interpolasyon olduğundan aralık dışına da
-  // sorunsuz uzanır (unwrap edilmiş büyük/negatif değerler dahil).
+  /** Yedek yol: expo-location'ın seyrek ve gürültülü yönünü süzer. */
+  const handleLocationHeading = useCallback(
+    (h: Location.LocationHeadingObject) => {
+      const raw = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+      if (raw == null || Number.isNaN(raw) || raw < 0) return;
+
+      const rad = (raw * Math.PI) / 180;
+      const sinR = Math.sin(rad);
+      const cosR = Math.cos(rad);
+      if (filteredSinRef.current === null || filteredCosRef.current === null) {
+        filteredSinRef.current = sinR;
+        filteredCosRef.current = cosR;
+      } else {
+        filteredSinRef.current += HEADING_ALPHA * (sinR - filteredSinRef.current);
+        filteredCosRef.current += HEADING_ALPHA * (cosR - filteredCosRef.current);
+      }
+      let filteredDeg = (Math.atan2(filteredSinRef.current, filteredCosRef.current) * 180) / Math.PI;
+      if (filteredDeg < 0) filteredDeg += 360;
+
+      if (prevNormalizedRef.current !== null && Math.abs(angleDiffSigned(prevNormalizedRef.current, filteredDeg)) < DEAD_BAND_DEG) {
+        return; // küçük titreşimleri yok say
+      }
+      applyHeading(filteredDeg, true);
+    },
+    [applyHeading],
+  );
+
+  // Sensör yalnız Kıble sekmesi açıkken çalışır (sekmeler arka planda bağlı kalıyor, pil yemesin)
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      let cleanup: (() => void) | undefined;
+      resetHeading();
+      (async () => {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (cancelled) return;
+        if (status !== 'granted') {
+          setDenied(true);
+          return;
+        }
+        setDenied(false);
+        const compass = Compass;
+        if (compass?.isAvailable()) {
+          const sub = compass.addListener('onHeading', (e) => {
+            setLowAccuracy(e.accuracy <= 1);
+            applyHeading(e.heading, false);
+          });
+          compass.start(place.latitude, place.longitude);
+          cleanup = () => {
+            sub.remove();
+            compass.stop();
+          };
+        } else {
+          const s = await Location.watchHeadingAsync(handleLocationHeading);
+          if (cancelled) s.remove();
+          else cleanup = () => s.remove();
+        }
+      })();
+      return () => {
+        cancelled = true;
+        cleanup?.();
+      };
+    }, [applyHeading, handleLocationHeading, resetHeading, place.latitude, place.longitude]),
+  );
+
+  // Kadran (çentik, derece, harfler, kıble çizgisi) telefonla birlikte döner: birikimli açının tersi kadar
+  // döndürülür, böylece K her zaman gerçek kuzeyi gösterir. Yazılar ise aynı açı kadar geri döndürülüp dik tutulur.
+  // Doğrusal interpolasyon aralık dışına da uzanır (unwrap edilmiş büyük/negatif değerler dahil).
   const dialRotate = headingAnim.interpolate({
     inputRange: [0, 360],
     outputRange: ['0deg', '-360deg'],
   });
+  const uprightRotate = headingAnim.interpolate({
+    inputRange: [0, 360],
+    outputRange: ['0deg', '360deg'],
+  });
 
-  const diff = displayHeading === null ? null : Math.abs(angleDiffSigned(displayHeading, bearing));
-  const aligned = diff !== null && diff < 5;
+  const g = dialGeometry(size);
+  const signedDiff = displayHeading === null ? null : angleDiffSigned(displayHeading, bearing);
+  const absDiff = signedDiff === null ? null : Math.abs(signedDiff);
+  const aligned = absDiff !== null && absDiff < ALIGNED_DEG;
+  const arcColor = aligned ? colors.green : ARC_COLOR;
+  const qiblaRounded = Math.round(bearing) % 360;
+
+  /** Kadranda dönen, ama ekranda hep dik duran yazı. */
+  const label = (key: string, deg: number, r: number, text: string, style: object) => {
+    const p = polar(g.c, r, deg);
+    return (
+      <Animated.View
+        key={key}
+        style={[styles.labelBox, { left: p.x - 30, top: p.y - 15, transform: [{ rotate: uprightRotate }] }]}
+      >
+        <Text style={style}>{text}</Text>
+      </Animated.View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <Text style={styles.title}>Kıble</Text>
-      <Text style={styles.sub}>
-        {place.name} · Kâbe yönü {Math.round(bearing)}°
-      </Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.title}>Kıble</Text>
+      </View>
 
       <View style={styles.center}>
-        <View style={[styles.dial, aligned && styles.dialAligned]}>
-          {/* Sabit referans işareti: telefonun baktığı yön (ekranın tepesi) */}
-          <View style={styles.referenceMark} />
+        <View style={{ width: size, height: size }}>
+          {/* Sabit katman: zemin, artı işareti, orta daire ve kıble dilimi */}
+          <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
+            <Circle cx={g.c} cy={g.c} r={g.c - 2} fill={colors.card} />
+            {theme.background ? <Circle cx={g.c} cy={g.c} r={g.c - 2} fill="#000" opacity={0.3} /> : null}
+            <Line x1={g.c - g.arcInner} y1={g.c} x2={g.c + g.arcInner} y2={g.c} stroke={colors.muted} strokeWidth={1} opacity={0.5} />
+            <Line x1={g.c} y1={g.c - g.arcInner} x2={g.c} y2={g.c + g.arcInner} stroke={colors.muted} strokeWidth={1} opacity={0.5} />
+            <Circle cx={g.c} cy={g.c} r={g.arcInner * 0.48} fill={aligned ? colors.green : colors.text} opacity={aligned ? 0.25 : 0.07} />
+          </Svg>
+          <QiblaArc size={size} color={arcColor} register={registerArc} />
 
-          <Animated.View style={[styles.ring, { transform: [{ rotate: dialRotate }] }]}>
-            {TICK_DEGREES.map((deg) => (
-              <View key={`tick-${deg}`} style={[styles.markWrap, { transform: [{ rotate: `${deg}deg` }] }]}>
-                <View style={[styles.tick, deg % 90 === 0 && styles.tickLong]} />
-              </View>
-            ))}
+          {/* Dönen kadran */}
+          <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ rotate: dialRotate }] }]}>
+            <Svg width={size} height={size}>
+              {TICKS.map((deg) => {
+                const major = deg % 30 === 0;
+                const cardinal = deg % 90 === 0;
+                const len = cardinal ? 22 : major ? 18 : deg % 10 === 0 ? 12 : 8;
+                const a = polar(g.c, g.tickOuter, deg);
+                const b = polar(g.c, g.tickOuter - len, deg);
+                return (
+                  <Line
+                    key={deg}
+                    x1={a.x}
+                    y1={a.y}
+                    x2={b.x}
+                    y2={b.y}
+                    stroke={major ? colors.text : colors.muted}
+                    strokeWidth={cardinal ? 3 : major ? 2.5 : 1}
+                    opacity={major ? 1 : 0.7}
+                  />
+                );
+              })}
+              {/* Kuzey: kırmızı üçgen */}
+              <Polygon
+                points={[polar(g.c, g.tickOuter + 4, 0), polar(g.c, g.tickOuter + 15, -4), polar(g.c, g.tickOuter + 15, 4)]
+                  .map((p) => `${p.x},${p.y}`)
+                  .join(' ')}
+                fill={colors.danger}
+              />
+              {/* Kıble çizgisi */}
+              {(() => {
+                const a = polar(g.c, g.arcOuter - 6, bearing);
+                const b = polar(g.c, g.tickOuter + 14, bearing);
+                return <Line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={arcColor} strokeWidth={4} strokeLinecap="round" />;
+              })()}
+            </Svg>
 
-            {DEGREE_LABEL_DEGREES.map((deg) => (
-              <View key={`label-${deg}`} style={[styles.markWrap, { transform: [{ rotate: `${deg}deg` }] }]}>
-                <View style={[styles.degreeLabelWrap, { transform: [{ rotate: `${-deg}deg` }] }]}>
-                  <Text style={styles.degreeLabel}>{deg}</Text>
-                </View>
-              </View>
-            ))}
-
-            {CARDINALS.map((c) => (
-              <View key={`cardinal-${c.deg}`} style={[styles.markWrap, { transform: [{ rotate: `${c.deg}deg` }] }]}>
-                <View style={[styles.cardinalLabelWrap, { transform: [{ rotate: `${-c.deg}deg` }] }]}>
-                  <Text style={[styles.cardinalLabel, c.accent && styles.cardinalAccent]}>{c.label}</Text>
-                </View>
-              </View>
-            ))}
-
-            <View style={[styles.needleWrap, { transform: [{ rotate: `${bearing}deg` }] }]}>
-              <MaterialCommunityIcons name="navigation" size={56} color={aligned ? colors.green : colors.accent} />
-              <View style={[styles.needleLine, { backgroundColor: aligned ? colors.green : colors.accent }]} />
-            </View>
+            {DEGREE_LABELS.filter((deg) => Math.abs(angleDiffSigned(deg, bearing)) > 14).map((deg) =>
+              label(`n${deg}`, deg, g.numberR, String(deg), styles.degreeLabel),
+            )}
+            {label('qibla', bearing, g.numberR + 2, String(qiblaRounded), [styles.qiblaLabel, { color: arcColor }])}
+            {CARDINALS.map((c) => label(`c${c.deg}`, c.deg, g.cardinalR, c.label, styles.cardinalLabel))}
           </Animated.View>
 
-          <View style={styles.dot} />
+          {/* Sabit yön çizgisi: telefonun baktığı yön (ekranın tepesi) */}
+          <View
+            pointerEvents="none"
+            style={[
+              styles.pointer,
+              {
+                left: g.c - 2.5,
+                top: g.c - g.tickOuter - 12,
+                height: g.tickOuter - g.arcOuter + 12,
+                backgroundColor: aligned ? colors.green : colors.text,
+              },
+            ]}
+          />
         </View>
 
-        <Text style={[styles.status, aligned && { color: colors.green }]}>
-          {denied
-            ? 'Konum izni verilmedi'
-            : displayHeading === null
-              ? 'Pusula başlatılıyor…'
-              : aligned
-                ? 'Kıbleye dönüksün'
-                : `Ok yönüne dön (${Math.round(diff ?? 0)}° fark)`}
-        </Text>
-        <Text style={styles.hint}>
-          Telefonu düz tut. Sapma varsa cihazı havada 8 çizerek pusulayı kalibre et ve metal cisimlerden uzak dur.
-        </Text>
+        <View style={styles.readout}>
+          {denied ? (
+            <Text style={styles.statusText}>Konum izni verilmedi</Text>
+          ) : signedDiff === null ? (
+            <Text style={styles.statusText}>Pusula başlatılıyor…</Text>
+          ) : aligned ? (
+            <View style={styles.bigRow}>
+              <MaterialCommunityIcons name="check-circle" size={40} color={colors.green} />
+              <Text style={[styles.alignedText, { color: colors.green }]}>Kıbleye dönüksün</Text>
+            </View>
+          ) : (
+            <View style={styles.bigRow}>
+              <MaterialCommunityIcons
+                name={signedDiff > 0 ? 'arrow-right-bottom' : 'arrow-left-bottom'}
+                size={36}
+                color={colors.text}
+                style={styles.turnIcon}
+              />
+              <Text style={styles.bigDegrees}>{Math.round(absDiff ?? 0)}°</Text>
+              <Text style={styles.bigWord}>{signedDiff > 0 ? 'sağa' : 'sola'}</Text>
+            </View>
+          )}
+          {displayHeading !== null ? (
+            <Text style={styles.info}>
+              Yön {Math.round(displayHeading) % 360}° {directionLabel(displayHeading)} · Kıble {qiblaRounded}°
+            </Text>
+          ) : null}
+          <Text style={styles.info}>
+            {place.name} · Kâbe'ye {formatKm(distanceKm)} km
+          </Text>
+          <Text style={[styles.hint, lowAccuracy && { color: colors.danger }]}>
+            {lowAccuracy
+              ? 'Doğruluk düşük · Cihazı havada 8 şeklinde hareket ettirin'
+              : 'Telefonu düz tutun, metal cisimlerden uzak durun'}
+          </Text>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -196,55 +402,33 @@ export default function QiblaScreen() {
 
 function makeStyles(colors: ThemeColors) {
   return StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: 20 },
-  title: { color: colors.text, fontSize: 24, fontWeight: '700', marginTop: 12 },
-  sub: { color: colors.muted, marginTop: 4 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  dial: {
-    width: SIZE,
-    height: SIZE,
-    borderRadius: SIZE / 2,
-    borderWidth: 3,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dialAligned: { borderColor: colors.green },
+    safe: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: 20 },
+    headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
+    title: { color: colors.text, fontSize: 24, fontWeight: '700', ...photoTextShadow(colors) },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  referenceMark: {
-    position: 'absolute',
-    top: -6,
-    width: 4,
-    height: 12,
-    borderRadius: 2,
-    backgroundColor: colors.accent,
-  },
+    labelBox: { position: 'absolute', width: 60, height: 30, alignItems: 'center', justifyContent: 'center' },
+    degreeLabel: { fontSize: 13, color: colors.muted },
+    qiblaLabel: { fontSize: 18, fontWeight: '800' },
+    cardinalLabel: { fontSize: 22, fontWeight: '500', color: colors.text },
+    pointer: { position: 'absolute', width: 5, borderRadius: 2.5 },
 
-  ring: { position: 'absolute', top: 0, left: 0, width: SIZE, height: SIZE },
-  markWrap: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: SIZE,
-    height: SIZE,
-    alignItems: 'center',
-  },
-
-  tick: { width: 2, height: 8, marginTop: 6, backgroundColor: colors.border, borderRadius: 1 },
-  tickLong: { height: 14, backgroundColor: colors.muted },
-
-  degreeLabelWrap: { marginTop: 22 },
-  degreeLabel: { fontSize: 9, color: colors.muted, opacity: 0.8 },
-
-  cardinalLabelWrap: { marginTop: 18 },
-  cardinalLabel: { fontSize: 15, fontWeight: '700', color: colors.muted, letterSpacing: 1 },
-  cardinalAccent: { color: colors.danger },
-
-  needleWrap: { position: 'absolute', top: 0, left: 0, width: SIZE, height: SIZE, alignItems: 'center', paddingTop: 22 },
-  needleLine: { width: 3, height: SIZE / 2 - 100, marginTop: 4, borderRadius: 2 },
-  dot: { width: 14, height: 14, borderRadius: 7, backgroundColor: colors.text },
-  status: { color: colors.accent, fontSize: 18, fontWeight: '600', marginTop: 28 },
-  hint: { color: colors.muted, fontSize: 12, textAlign: 'center', marginTop: 10, paddingHorizontal: 16, lineHeight: 18 },
+    readout: {
+      alignItems: 'center',
+      marginTop: 20,
+      width: '100%',
+      paddingVertical: 14,
+      paddingHorizontal: 12,
+      borderRadius: radius,
+      backgroundColor: colors.card,
+    },
+    bigRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: 10 },
+    turnIcon: { marginBottom: 14 },
+    bigDegrees: { color: colors.text, fontSize: 64, fontWeight: '300', lineHeight: 72 },
+    bigWord: { color: colors.text, fontSize: 36, fontWeight: '300', marginBottom: 8 },
+    alignedText: { fontSize: 26, fontWeight: '600', marginBottom: 4 },
+    statusText: { color: colors.muted, fontSize: 18, fontWeight: '500' },
+    info: { color: colors.text, fontSize: 15, marginTop: 8, textAlign: 'center' },
+    hint: { color: colors.muted, fontSize: 12, textAlign: 'center', marginTop: 10, lineHeight: 18 },
   });
 }

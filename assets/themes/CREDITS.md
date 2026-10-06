@@ -1,20 +1,16 @@
 # Tema fotoğrafları — atıflar
 
-## mecca.jpg / thumbs/mecca.jpg — Mescid-i Haram (Kâbe kapısı)
-## medina.jpg / thumbs/medina.jpg — Mescid-i Nebevi (gece)
-- Uygulama sahibinin sağladığı fotoğraflar (2026-10-01). Kaynak/lisans bilgisi henüz yok —
-  Play Store'a yüklemeden önce kullanım hakkı doğrulanmalı. Kâbe fotoğrafının siyah çerçevesi kırpıldı.
-
-## aqsa.jpg / thumbs/aqsa.jpg
-- **Başlık:** Jerusalem-2013-Temple Mount-Dome of the Rock & Chain 02
-- **Yazar:** Godot13 (Andrew Shiva)
-- **Lisans:** CC BY-SA 4.0 — atıf zorunlu; Ayarlar ekranında gösteriliyor. Küçültülüp 3:4 kırpıldı.
-- **Kaynak:** https://commons.wikimedia.org/wiki/File:Jerusalem-2013-Temple_Mount-Dome_of_the_Rock_%26_Chain_02.jpg
+## mecca.jpg / medina.jpg / aqsa.jpg (+ thumbs/, ../widget/)
+- Uygulama sahibinin sağladığı fotoğraflar (2026-10-06; IMG_3513 → Haram/Kâbe, IMG_3512 → Nebevi
+  yeşil kubbe, IMG_3511 → Aksa/Kubbetü's-Sahra). Kaynak/lisans bilgisi henüz yok — Play Store'a
+  yüklemeden önce kullanım hakkı doğrulanmalı. Önceki Aksa fotoğrafı (Godot13, CC BY-SA 4.0) artık
+  kullanılmıyor, bu yüzden Ayarlar'daki atıf satırı da kalktı.
 
 ---
 
-Fotoğrafların hepsi Wikimedia Commons'tan, 1080px genişliğe küçültülüp JPEG kalite 75 ile
-sıkıştırılarak kullanılmıştır (`assets/themes/thumbs/` altındakiler Ayarlar ekranındaki
-küçük önizleme kartları için 240px genişliğinde ayrı kopyalardır). Uygulama içinde Ayarlar
-ekranında, seçili temanın altında "Fotoğraf: <yazar>, <lisans>" şeklinde küçük bir atıf
-satırı gösterilir.
+Arka planlar 1080 px genişliğe küçültüldü. `thumbs/` altındakiler Ayarlar'daki kare önizleme kartları için
+480x480 kırpımlardır; `assets/widget/` altındakiler ana ekran widget'ı için %50 siyah örtüsü gömülmüş 800x400
+yatay kırpımlardır.
+
+## ../sponsor/adezyon-medya*.png
+- Sponsor (Adezyon Medya) logosu, uygulama sahibinden (2026-10-06). Ana ekranın sağ üstünde gösterilir.

@@ -1,15 +1,29 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, AppState, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import Text from '../components/AppText';
+import SponsorBadge from '../components/SponsorBadge';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import DailySection from '../components/DailySection';
 import ImsakiyeModal from '../components/ImsakiyeModal';
+import WidgetRefresh from '../../modules/widget-refresh';
+import { openExactAlarmSettings } from '../notifications';
 import { usePrayer } from '../PrayerContext';
 import { useTheme } from '../ThemeContext';
-import { radius, ThemeColors } from '../theme';
-import { dateKey, dayPartsTr, findCurrent, findNext, formatCountdown, longDateTr, pad, toDate } from '../time';
+import { photoTextShadow, radius, ThemeColors } from '../theme';
+import {
+  countdownStage,
+  CountdownStage,
+  dateKey,
+  dayPartsTr,
+  findCurrent,
+  findNext,
+  formatCountdown,
+  longDateTr,
+  pad,
+  toDate,
+} from '../time';
 import { PRAYER_KEYS, PRAYER_NAMES_TR, PrayerKey } from '../types';
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
@@ -71,7 +85,9 @@ export default function HomeScreen() {
       >
         <TouchableOpacity style={styles.placeRow} onPress={onLocate} disabled={locating} activeOpacity={0.7}>
           <Ionicons name="location-sharp" size={18} color={colors.accent} />
-          <Text style={styles.place}>{place.name}</Text>
+          <Text style={styles.place} numberOfLines={1}>
+            {place.name}
+          </Text>
           {locating ? (
             <ActivityIndicator size="small" color={colors.accent} />
           ) : (
@@ -91,15 +107,7 @@ export default function HomeScreen() {
                 </View>
               ) : null}
               <Text style={styles.heroLabel}>{PRAYER_NAMES_TR[next.key]} vaktine kalan</Text>
-              {(() => {
-                const cd = formatCountdown(next.at.getTime() - now.getTime());
-                return (
-                  <Text style={styles.countdown}>
-                    {cd.slice(0, -3)}
-                    <Text style={styles.countdownSec}>{cd.slice(-3)}</Text>
-                  </Text>
-                );
-              })()}
+              <Countdown msLeft={next.at.getTime() - now.getTime()} styles={styles} />
               {current ? (
                 <View style={styles.progressWrap}>
                   <View style={styles.progressTrack}>
@@ -115,6 +123,7 @@ export default function HomeScreen() {
                   </View>
                 </View>
               ) : null}
+              <SponsorBadge />
             </>
           ) : loading ? (
             <ActivityIndicator color={colors.onHero} />
@@ -122,6 +131,8 @@ export default function HomeScreen() {
             <Text style={styles.heroLabel}>Vakit bilgisi yok</Text>
           )}
         </LinearGradient>
+
+        <ExactAlarmHint styles={styles} colors={colors} />
 
         {error ? (
           <TouchableOpacity style={styles.error} onPress={refresh}>
@@ -214,14 +225,79 @@ export default function HomeScreen() {
   );
 }
 
+/**
+ * "Alarmlar ve hatırlatıcılar" izni kapalıysa (Android 14+ yeni kurulumda kapalı gelir) bildirimler ve widget'ın
+ * vakit/son 10–5 dakika geçişleri dakikalarca gecikebilir; izin açılana kadar kısa bir uyarı gösterilir.
+ */
+function ExactAlarmHint({ styles, colors }: { styles: ReturnType<typeof makeStyles>; colors: ThemeColors }) {
+  const check = () => WidgetRefresh?.canScheduleExactAlarms() ?? true;
+  const [allowed, setAllowed] = useState(check);
+
+  useEffect(() => {
+    // Kullanıcı ayardan dönünce yeniden bak
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setAllowed(check());
+    });
+    return () => sub.remove();
+  }, []);
+
+  if (allowed) return null;
+  return (
+    <TouchableOpacity style={styles.alarmHint} onPress={() => openExactAlarmSettings().catch(() => {})} activeOpacity={0.8}>
+      <Ionicons name="alarm-outline" size={20} color={colors.highlight} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.alarmHintTitle}>Tam vaktinde uyarı için izin ver</Text>
+        <Text style={styles.alarmHintText}>
+          "Alarmlar ve hatırlatıcılar" kapalı; bildirimler ve widget sayacı gecikebilir. Açmak için dokun.
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+    </TouchableOpacity>
+  );
+}
+
+/** Son 10 dakikada sayaç kırmızımsı olur ve saniye görünür; son 5 dakikada koyu kırmızı, iri ve hafifçe titrer. */
+function Countdown({ msLeft, styles }: { msLeft: number; styles: ReturnType<typeof makeStyles> }) {
+  const stage: CountdownStage = countdownStage(msLeft);
+  const shake = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (stage !== 'urgent') return;
+    const step = (toValue: number) => Animated.timing(shake, { toValue, duration: 45, useNativeDriver: true });
+    // Kısa bir sarsıntı, ardından duraklama — sürekli titreme göz yorar
+    const loop = Animated.loop(
+      Animated.sequence([step(2.5), step(-2.5), step(2), step(-2), step(0), Animated.delay(800)]),
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      shake.setValue(0);
+    };
+  }, [stage, shake]);
+
+  return (
+    <Animated.View style={{ transform: [{ translateX: shake }] }}>
+      <Text
+        style={[
+          styles.countdown,
+          stage === 'soon' && styles.countdownSoon,
+          stage === 'urgent' && styles.countdownUrgent,
+        ]}
+      >
+        {formatCountdown(msLeft)}
+      </Text>
+    </Animated.View>
+  );
+}
+
 function makeStyles(colors: ThemeColors) {
   return StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 20, paddingBottom: 40 },
-  placeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  place: { color: colors.text, fontSize: 20, fontWeight: '700' },
-  date: { color: colors.muted, marginTop: 6, fontSize: 14 },
-  hijri: { color: colors.accent, marginTop: 2, fontSize: 13 },
+  placeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
+  place: { color: colors.text, fontSize: 20, fontWeight: '700', flexShrink: 1, ...photoTextShadow(colors) },
+  date: { color: colors.text, marginTop: 6, fontSize: 14, ...photoTextShadow(colors) },
+  hijri: { color: colors.accent, marginTop: 2, fontSize: 13, ...photoTextShadow(colors) },
   hero: {
     marginTop: 20,
     borderRadius: radius,
@@ -248,8 +324,13 @@ function makeStyles(colors: ThemeColors) {
   progressLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
   progressText: { color: colors.onHero, fontSize: 12, opacity: 0.85, fontVariant: ['tabular-nums'] },
   heroLabel: { color: colors.onHero, fontSize: 15, opacity: 0.9 },
-  countdown: { color: colors.onHero, fontSize: 48, fontWeight: '300', marginTop: 6, fontVariant: ['tabular-nums'] },
-  countdownSec: { fontSize: 28, fontWeight: '300', opacity: 0.75 },
+  countdown: { color: colors.onHero, fontSize: 60, fontWeight: '600', marginTop: 6, fontVariant: ['tabular-nums'] },
+  countdownSoon: { color: '#FF8A80' },
+  countdownUrgent: {
+    color: '#B3141E',
+    fontSize: 66,
+    fontWeight: '800',
+  },
   dayCard: {
     marginTop: 12,
     backgroundColor: colors.card,
@@ -287,6 +368,20 @@ function makeStyles(colors: ThemeColors) {
   boxIcon: { marginVertical: 6 },
   boxFill: { position: 'absolute', left: 0, right: 0, bottom: 0, opacity: 0.35 },
   boxTime: { fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  alarmHint: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.card,
+    borderRadius: radius,
+    borderWidth: 1,
+    borderColor: colors.highlight,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  alarmHintTitle: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  alarmHintText: { color: colors.muted, fontSize: 12, marginTop: 2, lineHeight: 16 },
   imsakiyeCard: {
     marginTop: 12,
     flexDirection: 'row',

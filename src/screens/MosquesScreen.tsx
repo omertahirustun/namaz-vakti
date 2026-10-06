@@ -7,7 +7,7 @@ import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { getCurrentCoords } from '../location';
 import { directionName, findNearbyMosques, formatDistance, loadCachedMosques, Mosque, openInMaps } from '../mosques';
 import { useTheme } from '../ThemeContext';
-import { radius, ThemeColors } from '../theme';
+import { photoTextShadow, radius, ThemeColors } from '../theme';
 
 type Status = 'loading' | 'ready' | 'denied' | 'noLocation' | 'error';
 type Mode = 'list' | 'map';
@@ -178,7 +178,9 @@ export default function MosquesScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <Text style={styles.title}>Yakındaki Camiler</Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.title}>Yakındaki Camiler</Text>
+      </View>
       {status === 'ready' ? (
         <View style={styles.segment}>
           {(
@@ -210,7 +212,8 @@ export default function MosquesScreen() {
 function makeStyles(colors: ThemeColors) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.bg },
-    title: { color: colors.text, fontSize: 24, fontWeight: '700', marginTop: 12, marginBottom: 8, paddingHorizontal: 20 },
+    headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 12, marginBottom: 8, paddingHorizontal: 20 },
+    title: { color: colors.text, fontSize: 24, fontWeight: '700', flexShrink: 1, ...photoTextShadow(colors) },
     segment: {
       flexDirection: 'row',
       marginHorizontal: 20,

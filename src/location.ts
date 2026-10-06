@@ -62,3 +62,12 @@ export function qiblaBearing(latitude: number, longitude: number): number {
   const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
   return ((Math.atan2(y, x) / rad) + 360) % 360;
 }
+
+/** Verilen noktadan Kâbe'ye büyük daire uzaklığı (km). */
+export function kaabaDistanceKm(latitude: number, longitude: number): number {
+  const rad = Math.PI / 180;
+  const dp = (KAABA.lat - latitude) * rad;
+  const dl = (KAABA.lon - longitude) * rad;
+  const a = Math.sin(dp / 2) ** 2 + Math.cos(latitude * rad) * Math.cos(KAABA.lat * rad) * Math.sin(dl / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(a));
+}
