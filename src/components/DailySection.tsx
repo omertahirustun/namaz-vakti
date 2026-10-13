@@ -110,7 +110,7 @@ export default function DailySection({ date }: { date: string }) {
           data.verse
             ? () =>
                 shareText(
-                  `📖 Günün Ayeti\n\n«${data.verse!.text}»\n\n— ${data.verse!.ref}\n\nNamaz Vakti uygulamasından paylaşıldı`
+                  `📖 Günün Ayeti\n\n«${data.verse!.text}»\n\n— ${data.verse!.ref}\n\nHaydi Namaza uygulamasından paylaşıldı`
                 )
             : undefined
         }
@@ -136,7 +136,7 @@ export default function DailySection({ date }: { date: string }) {
           data.hadith
             ? () =>
                 shareText(
-                  `📿 Günün Hadisi\n\n«${data.hadith!.text}»\n\n— ${data.hadith!.ref}\n\nNamaz Vakti uygulamasından paylaşıldı`
+                  `📿 Günün Hadisi\n\n«${data.hadith!.text}»\n\n— ${data.hadith!.ref}\n\nHaydi Namaza uygulamasından paylaşıldı`
                 )
             : undefined
         }

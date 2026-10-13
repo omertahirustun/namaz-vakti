@@ -17,5 +17,5 @@ export default function SponsorBadge() {
 }
 
 const styles = StyleSheet.create({
-  logo: { width: Math.round(18 * ASPECT), height: 18, marginTop: 16, opacity: 0.95 },
+  logo: { width: Math.round(15 * ASPECT), height: 15, marginTop: 16, opacity: 0.95 },
 });

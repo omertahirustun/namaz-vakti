@@ -138,7 +138,7 @@ function makeStyles(colors: ThemeColors) {
   return StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.solid,
     borderTopLeftRadius: radius,
     borderTopRightRadius: radius,
     maxHeight: '80%',
@@ -171,8 +171,8 @@ function makeStyles(colors: ThemeColors) {
   },
   trAlt: { backgroundColor: 'rgba(127,127,127,0.07)' },
   trLast: { borderBottomWidth: 0 },
-  trToday: { backgroundColor: colors.cardAlt, borderTopWidth: 1.5, borderBottomWidth: 1.5, borderColor: colors.accent },
-  thead: { backgroundColor: colors.cardAlt, borderBottomWidth: 1, borderBottomColor: colors.accent },
+  trToday: { backgroundColor: colors.solidAlt, borderTopWidth: 1.5, borderBottomWidth: 1.5, borderColor: colors.accent },
+  thead: { backgroundColor: colors.solidAlt, borderBottomWidth: 1, borderBottomColor: colors.accent },
   th: { color: colors.muted, fontWeight: '700', fontSize: 10.5, textAlign: 'center' },
   dayCell: { width: 54, paddingVertical: 6, paddingHorizontal: 6, justifyContent: 'center' },
   dayText: { color: colors.text, fontSize: 12, fontWeight: '600' },

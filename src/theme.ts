@@ -5,6 +5,9 @@ export interface ThemeColors {
   bg: string;
   card: string;
   cardAlt: string;
+  /** card/cardAlt'ın opak karşılıkları: fotoğrafın görünmemesi gereken yüzeyler (alttan açılan pencere, butonlar) */
+  solid: string;
+  solidAlt: string;
   border: string;
   text: string;
   muted: string;
@@ -75,6 +78,8 @@ const defaultTheme: ThemeDefinition = {
     bg: '#E6EBF7',
     card: '#FFFFFF',
     cardAlt: '#EEF1FA',
+    solid: '#FFFFFF',
+    solidAlt: '#EEF1FA',
     border: '#C5CEEC',
     text: '#141F4D',
     muted: '#5A6690',
@@ -99,6 +104,8 @@ const meccaTheme: ThemeDefinition = {
     bg: 'transparent',
     card: 'rgba(17,15,12,0.7)',
     cardAlt: 'rgba(38,32,18,0.58)',
+    solid: '#1C1914',
+    solidAlt: '#2C261A',
     border: 'rgba(212,175,110,0.35)',
     text: '#F6EFE2',
     muted: '#C7B89C',
@@ -126,6 +133,8 @@ const medinaTheme: ThemeDefinition = {
     bg: 'transparent',
     card: 'rgba(23,30,24,0.68)',
     cardAlt: 'rgba(33,42,31,0.56)',
+    solid: '#1A221B',
+    solidAlt: '#283226',
     border: 'rgba(199,216,186,0.3)',
     text: '#F3EFE2',
     muted: '#C9D2C0',
@@ -153,6 +162,8 @@ const aqsaTheme: ThemeDefinition = {
     bg: 'transparent',
     card: 'rgba(12,22,44,0.7)',
     cardAlt: 'rgba(24,38,70,0.58)',
+    solid: '#101B35',
+    solidAlt: '#1D2C4F',
     border: 'rgba(214,180,92,0.35)',
     text: '#F4F1E6',
     muted: '#B9C4DA',

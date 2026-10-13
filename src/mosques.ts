@@ -64,7 +64,7 @@ async function fetchOverpass(url: string, query: string, signal: AbortSignal): P
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       // Overpass kullanım kuralları uygulamanın kendini tanıtmasını istiyor
-      'User-Agent': 'NamazVakti/1.0 (com.omertahirustun.namazvakti)',
+      'User-Agent': 'HaydiNamaza/1.0 (com.adezyonmedya.haydinamaza)',
     },
     body: `data=${encodeURIComponent(query)}`,
     signal,

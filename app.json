@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Namaz Vakti",
+    "name": "Haydi Namaza",
     "slug": "namaz-vakti",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,13 +8,20 @@
     "backgroundColor": "#E6EBF7",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.omertahirustun.namazvakti",
+      "bundleIdentifier": "com.adezyonmedya.haydinamaza",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Bulunduğun yere göre namaz vakitlerini ve kıble yönünü hesaplamak için konuma ihtiyaç duyulur."
+        "NSLocationWhenInUseUsageDescription": "Bulunduğun yere göre namaz vakitlerini ve kıble yönünü hesaplamak için konuma ihtiyaç duyulur.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "buildNumber": "1",
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.adezyonmedya.haydinamaza"
+        ]
       }
     },
     "android": {
-      "package": "com.omertahirustun.namazvakti",
+      "package": "com.adezyonmedya.haydinamaza",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
@@ -23,10 +30,10 @@
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
       ],
-      "versionCode": 21,
+      "versionCode": 27,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FFFFFF"
+        "backgroundColor": "#FAF6EC"
       }
     },
     "plugins": [
@@ -40,8 +47,10 @@
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
-          "color": "#0A8C77",
-          "sounds": ["./assets/sounds/vakit.wav"]
+          "color": "#243AA2",
+          "sounds": [
+            "./assets/sounds/vakit.wav"
+          ]
         }
       ],
       [
@@ -50,7 +59,7 @@
           "image": "./assets/splash-icon.png",
           "imageWidth": 180,
           "resizeMode": "contain",
-          "backgroundColor": "#FFFFFF"
+          "backgroundColor": "#FAF6EC"
         }
       ],
       "expo-font",
@@ -88,10 +97,24 @@
               "resizeMode": "horizontal|vertical",
               "previewImage": "./assets/widget/preview-countdown.png",
               "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "PrayerStrip",
+              "label": "Vakit Şeridi",
+              "description": "İnce uzun yatay: sıradaki vakte kalan süre ve yan yana günün vakitleri",
+              "minWidth": "250dp",
+              "minHeight": "50dp",
+              "targetCellWidth": 6,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "previewImage": "./assets/widget/preview-strip.png",
+              "updatePeriodMillis": 1800000
             }
           ]
         }
-      ]
+      ],
+      "expo-background-task",
+      "@bacons/apple-targets"
     ],
     "icon": "./assets/icon.png",
     "web": {

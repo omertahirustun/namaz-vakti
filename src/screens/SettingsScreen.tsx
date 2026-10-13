@@ -95,7 +95,7 @@ export default function SettingsScreen() {
               value={settings.notificationsEnabled}
               onValueChange={(v) => updateSettings({ notificationsEnabled: v })}
               trackColor={{ true: colors.accent, false: colors.border }}
-              thumbColor={colors.card}
+              thumbColor="#FFFFFF"
             />
           </View>
         </View>
@@ -110,7 +110,7 @@ export default function SettingsScreen() {
                     value={settings.enabled[k]}
                     onValueChange={(v) => updateSettings((prev) => ({ enabled: { ...prev.enabled, [k]: v } }))}
                     trackColor={{ true: colors.accent, false: colors.border }}
-                    thumbColor={colors.card}
+                    thumbColor="#FFFFFF"
                   />
                 </View>
               ))}
@@ -184,9 +184,9 @@ function makeStyles(colors: ThemeColors) {
     content: { padding: 20, paddingBottom: 50 },
     headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     title: { color: colors.text, fontSize: 24, fontWeight: '700', ...photoTextShadow(colors) },
-    section: { color: colors.accent, fontSize: 13, fontWeight: '700', marginTop: 24, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
-    subsection: { color: colors.muted, fontSize: 13, marginTop: 14, marginBottom: 8 },
-    card: { backgroundColor: colors.card, borderRadius: radius, paddingHorizontal: 16, paddingVertical: 6, borderWidth: 1, borderColor: colors.border, marginBottom: 8 },
+    section: { color: colors.accent, fontSize: 13, fontWeight: '700', marginTop: 24, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1, ...photoTextShadow(colors) },
+    subsection: { color: colors.muted, fontSize: 13, marginTop: 14, marginBottom: 8, ...photoTextShadow(colors) },
+    card: { backgroundColor: colors.solid, borderRadius: radius, paddingHorizontal: 16, paddingVertical: 6, borderWidth: 1, borderColor: colors.border, marginBottom: 8 },
     rowInner: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 10 },
     rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
     sep: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
@@ -195,11 +195,11 @@ function makeStyles(colors: ThemeColors) {
     hint: { color: colors.muted, fontSize: 12, marginTop: 2, lineHeight: 16 },
     link: { color: colors.accent, paddingVertical: 10, fontWeight: '600' },
     chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    chip: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card },
+    chip: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.solid },
     chipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
     chipText: { color: colors.text, fontSize: 14 },
     chipTextActive: { color: colors.onAccent, fontWeight: '700' },
-    footer: { color: colors.muted, fontSize: 12, marginTop: 24, lineHeight: 18 },
+    footer: { color: colors.muted, fontSize: 12, marginTop: 24, lineHeight: 18, ...photoTextShadow(colors) },
     themeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
     // Kare kart, 2 sütun. Oran kartın kendisinde; resim kartı yalnızca doldurur (aspectRatio
     // doğrudan Image'a verilince release derlemede kartlar farklı yükseklikte çıkıyordu).
@@ -210,7 +210,7 @@ function makeStyles(colors: ThemeColors) {
       borderRadius: radius,
       borderWidth: 2,
       borderColor: 'transparent',
-      backgroundColor: colors.card,
+      backgroundColor: colors.solid,
       overflow: 'hidden',
       justifyContent: 'flex-end',
     },
@@ -234,6 +234,6 @@ function makeStyles(colors: ThemeColors) {
     // Fotoğrafın üstünde her temada okunur olsun diye sabit koyu şerit
     themeLabelBar: { backgroundColor: 'rgba(0,0,0,0.55)', paddingVertical: 8, paddingHorizontal: 8 },
     themeLabel: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', textAlign: 'center' },
-    photoCredit: { color: colors.muted, fontSize: 11, marginTop: 8, lineHeight: 15 },
+    photoCredit: { color: colors.muted, fontSize: 11, marginTop: 8, lineHeight: 15, ...photoTextShadow(colors) },
   });
 }

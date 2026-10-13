@@ -7,8 +7,9 @@ import { dateKey, toDate } from './time';
 
 // Android kanal ayarları (ses, rozet vb.) oluşturulduktan sonra değiştirilemez; bu yüzden her değişiklikte yeni kimlik.
 // v3: kendi zil sesimiz (assets/sounds/vakit.wav, burada sentezlendi; app.json'da expo-notifications "sounds").
-const CHANNEL_ID = 'prayer-times-v3';
-const OLD_CHANNEL_IDS = ['prayer-times', 'prayer-times-v2'];
+// v4: ses türü (audioAttributes) açıkça bildirim; v3'te boş kalıyordu ve bazı telefonlarda bildirim sessiz geliyordu.
+const CHANNEL_ID = 'prayer-times-v4';
+const OLD_CHANNEL_IDS = ['prayer-times', 'prayer-times-v2', 'prayer-times-v3'];
 const SOUND = 'vakit.wav';
 /** Bildirim, vakit girdikten bu kadar sonra çekmeceden kendiliğinden kalkar (yerel yama: data.dismissAt). */
 const DISMISS_AFTER_MS = 60 * 60_000;
@@ -31,6 +32,11 @@ export async function ensureNotificationPermission(): Promise<boolean> {
       name: 'Namaz vakitleri',
       importance: Notifications.AndroidImportance.HIGH,
       sound: SOUND,
+      audioAttributes: {
+        usage: Notifications.AndroidAudioUsage.NOTIFICATION,
+        contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+      },
+      enableVibrate: true,
       vibrationPattern: [0, 250, 200, 250],
       // Uygulama simgesinde "1, 2…" sayacı/noktası çıkmasın
       showBadge: false,

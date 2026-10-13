@@ -15,5 +15,5 @@ interface CompassNative {
   addListener(event: 'onHeading', listener: (e: CompassHeading) => void): EventSubscription;
 }
 
-// Expo Go'da ve iOS'ta yok; Kıble ekranı o zaman expo-location'ın yön verisine düşer.
+// Expo Go'da yok; Kıble ekranı o zaman expo-location'ın yön verisine düşer (iOS: ios/CompassModule.swift).
 export default requireOptionalNativeModule<CompassNative>('Compass');

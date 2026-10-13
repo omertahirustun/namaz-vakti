@@ -24,7 +24,7 @@ const DAILY_KEY = 'daily:v2';
 const HADITH_KEY = 'hadith:nawawi:v1';
 const HISTORY_LIMIT = 5;
 // Wikimedia, tanımsız istemcileri (okhttp) 403 ile reddediyor.
-const WIKI_HEADERS = { 'User-Agent': 'NamazVakti/1.0 (com.omertahirustun.namazvakti)' };
+const WIKI_HEADERS = { 'User-Agent': 'HaydiNamaza/1.0 (com.adezyonmedya.haydinamaza)' };
 
 export interface Verse {
   arabic: string;
