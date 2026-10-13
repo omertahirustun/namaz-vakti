@@ -14,3 +14,6 @@ npm-debug.log*
 # @bacons/apple-targets her prebuild'de yeniden üretir
 targets/*/Assets.xcassets/
 targets/*/generated.entitlements
+
+# yerel modüllerin Gradle çıktıları
+modules/*/android/build/

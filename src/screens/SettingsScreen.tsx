@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
-import { Alert, Image, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+import { Alert, Image, Platform, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import Text from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,15 +8,22 @@ import { needsExactAlarmSetting, openBatterySettings, openExactAlarmSettings } f
 import { usePrayer } from '../PrayerContext';
 import { useTheme } from '../ThemeContext';
 import { photoTextShadow, radius, THEME_ORDER, ThemeColors, THEMES } from '../theme';
-import { CALC_METHODS, PRAYER_KEYS, PRAYER_NAMES_TR } from '../types';
+import { CALC_METHODS, PRAYER_KEYS, PRAYER_NAMES_TR, WIDGET_STYLES } from '../types';
 
 const OFFSETS = [0, 5, 10, 15, 20, 30];
+
+// Widget kütüphanesi native modülü içe aktarılırken ister; Expo Go'da ve iOS'ta hiç yüklenmesin (bkz. WidgetSync)
+const WidgetsModal: typeof import('../components/WidgetsModal').default | null =
+  Platform.OS === 'android' && Constants.executionEnvironment !== ExecutionEnvironment.StoreClient
+    ? require('../components/WidgetsModal').default
+    : null;
 
 export default function SettingsScreen() {
   const { settings, updateSettings, place, locateMe } = usePrayer();
   const { theme, themeId, setThemeId } = useTheme();
   const { colors } = theme;
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const [widgetsVisible, setWidgetsVisible] = useState(false);
 
   const onLocate = async () => {
     try {
@@ -85,6 +93,24 @@ export default function SettingsScreen() {
           <Text style={styles.photoCredit}>
             Fotoğraf: {theme.photoCredit.author}, {theme.photoCredit.license} (Wikimedia Commons)
           </Text>
+        ) : null}
+
+        {WidgetsModal ? (
+          <>
+            <Text style={styles.section}>Widget'lar</Text>
+            <TouchableOpacity style={styles.card} onPress={() => setWidgetsVisible(true)}>
+              <View style={styles.rowBetween}>
+                <View style={styles.rowText}>
+                  <Text style={styles.label}>Widget görünümü</Text>
+                  <Text style={styles.hint}>
+                    {WIDGET_STYLES.find((w) => w.id === settings.widgetStyle)?.label} · önizle ve ana ekrana ekle
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+              </View>
+            </TouchableOpacity>
+            <WidgetsModal visible={widgetsVisible} onClose={() => setWidgetsVisible(false)} />
+          </>
         ) : null}
 
         <Text style={styles.section}>Bildirimler</Text>

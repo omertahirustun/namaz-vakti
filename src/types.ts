@@ -32,13 +32,26 @@ export interface Settings {
   enabled: Record<PrayerKey, boolean>;
   /** Aladhan hesaplama yöntemi (13 = Diyanet) */
   method: number;
+  /** Ana ekran widget'larının görünümü ('theme' = uygulamanın seçili teması) */
+  widgetStyle: WidgetStyle;
 }
+
+export type WidgetStyle = 'theme' | 'transparent' | 'gray' | 'black' | 'white';
+
+export const WIDGET_STYLES: { id: WidgetStyle; label: string }[] = [
+  { id: 'theme', label: 'Tema' },
+  { id: 'transparent', label: 'Şeffaf' },
+  { id: 'gray', label: 'Gri' },
+  { id: 'black', label: 'Siyah' },
+  { id: 'white', label: 'Beyaz' },
+];
 
 export const DEFAULT_SETTINGS: Settings = {
   notificationsEnabled: true,
   offsetMinutes: 0,
   enabled: { Fajr: true, Sunrise: false, Dhuhr: true, Asr: true, Maghrib: true, Isha: true },
   method: 13,
+  widgetStyle: 'theme',
 };
 
 export const DEFAULT_PLACE: Place = {

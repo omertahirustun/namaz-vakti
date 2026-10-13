@@ -28,7 +28,7 @@ export default function WidgetSync() {
 
   useEffect(() => {
     if (!enabled || days.length === 0) return;
-    const data = { themeId, placeName: place.name, days };
+    const data = { themeId, widgetStyle: settings.widgetStyle, placeName: place.name, days };
     if (Platform.OS === 'ios') {
       // iOS widget'ı (targets/widget) kendi zaman çizelgesini kurar; burada yalnız veri yazılıp yenilenir
       const { syncIosWidgets } = require('./iosWidget') as typeof import('./iosWidget');
@@ -46,7 +46,7 @@ export default function WidgetSync() {
         .then(() => scheduleWidgetRefresh(name, days))
         .catch(() => {});
     }
-  }, [themeId, place, settings.method, days, foregrounds]);
+  }, [themeId, settings.widgetStyle, place, settings.method, days, foregrounds]);
 
   return null;
 }

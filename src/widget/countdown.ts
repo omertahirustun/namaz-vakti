@@ -16,6 +16,25 @@ export function countdownFormat(msLeft: number): string {
   return '%s'; // "59:59" olduğu gibi
 }
 
+/** countdownFormat ile aynı biçimde sabit metin (canlı sayaç çizilemeyen uygulama içi önizleme için) */
+export function countdownText(msLeft: number): string {
+  const s = Math.max(0, Math.floor(msLeft / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return h >= 1 ? `${p(h)}:${p(m)}` : `${p(m)}:${p(s % 60)}`;
+}
+
+/**
+ * Sayaç TextWidget'ının props'u: ana ekranda şeffaf yer tutucu + üstüne canlı Chronometer,
+ * önizlemede (WidgetPreview canlı sayaç çizemez) o anki kalan süre düz metin.
+ */
+export function countdownProps(nextAt: Date, msLeft: number, preview: boolean) {
+  return preview
+    ? { text: countdownText(msLeft) }
+    : { text: '00:00', countdownTo: nextAt.getTime(), countdownFormat: countdownFormat(msLeft) };
+}
+
 /** Son 10 dakikada kırmızımsı, son 5 dakikada koyu kırmızı; ikisi de gölgesiz (düz) çizilir. */
 export const STAGE_COLORS: Record<Exclude<CountdownStage, 'normal'>, ColorProp> = {
   soon: '#FF8A80',
