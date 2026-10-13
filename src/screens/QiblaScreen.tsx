@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Animated, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import Svg, { Circle, Line, Path, Polygon } from 'react-native-svg';
 import Text from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,6 +7,8 @@ import * as Location from 'expo-location';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import Compass from '../../modules/compass';
+import CalibrationOverlay, { CompassQuality } from '../components/CalibrationOverlay';
+import { loadCompassCalibrated, saveCompassCalibrated } from '../storage';
 import { usePrayer } from '../PrayerContext';
 import { kaabaDistanceKm, qiblaBearing } from '../location';
 import { useTheme } from '../ThemeContext';
@@ -22,6 +24,8 @@ const DEAD_BAND_DEG = 1;
 const ROTATE_DURATION_MS = 150;
 /** Durum metninin (derece/aligned) ekranda güncellenme sıklığı — gereksiz render'ı önler. */
 const DISPLAY_THROTTLE_MS = 200;
+/** Yerel modül yolunda kadranın güncellenmesi için en küçük yön değişimi (derece) */
+const MIN_STEP_DEG = 0.2;
 
 /** a açısından b açısına en kısa yönde imzalı fark, [-180, 180) aralığında. */
 function angleDiffSigned(a: number, b: number) {
@@ -42,6 +46,22 @@ const DIRECTIONS_8 = ['K', 'KD', 'D', 'GD', 'G', 'GB', 'B', 'KB'];
 const ARC_COLOR = '#D4A055';
 /** Bu kadar dereceden yakınsa "kıbleye dönük" sayılır. */
 const ALIGNED_DEG = 5;
+/** Kalibrasyon ekranı doğruluk "iyi" olunca en az bu kadar açık kalsın (kullanıcı 8'i görsün)… */
+const CALIBRATION_MIN_MS = 3000;
+/** …ve "iyi" bu kadar süre bozulmadan sürsün */
+const GOOD_HOLD_MS = 1500;
+/** Doğruluk bu kadar süre düşük kalırsa kalibrasyon ekranı kendiliğinden açılır */
+const LOW_HOLD_MS = 1500;
+
+/**
+ * Sensörün tahmini hatası biliniyorsa (Android'de füzyon sensörü, iOS'ta headingAccuracy) ona, yoksa
+ * manyetometrenin kalibrasyon düzeyine göre. Kıble için ±10° üstü "iyi" sayılmaz.
+ */
+function compassQuality(level: number, accuracyDeg: number): CompassQuality {
+  // 0 da "bilinmiyor": bazı cihazlar (ve emülatör) tahmin yapmadığında 0 gönderiyor
+  if (accuracyDeg > 0) return accuracyDeg <= 10 ? 'good' : accuracyDeg <= 20 ? 'medium' : 'low';
+  return level >= 3 ? 'good' : level === 2 ? 'medium' : 'low';
+}
 
 function directionLabel(deg: number) {
   return DIRECTIONS_8[Math.round(deg / 45) % 8];
@@ -118,8 +138,26 @@ export default function QiblaScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [displayHeading, setDisplayHeading] = useState<number | null>(null);
   const [denied, setDenied] = useState(false);
-  /** Manyetometre kalibrasyonu düşükse kullanıcıya 8 çizmesi söylenir (yalnız yerel modülde bilinir) */
-  const [lowAccuracy, setLowAccuracy] = useState(false);
+  /** Pusula doğruluğu (yalnız yerel modülde bilinir; expo-location yedeğinde 'unknown' kalır) */
+  const [quality, setQuality] = useState<CompassQuality>('unknown');
+  const [accuracyDeg, setAccuracyDeg] = useState<number | null>(null);
+  const qualityRef = useRef<CompassQuality>('unknown');
+  const accuracyDegRef = useRef<number | null>(null);
+  const lastAccuracyUpdateRef = useRef(0);
+  /** Kalibrasyon ekranı açık mı; pusula yerine gösterilir */
+  const [calibrating, setCalibrating] = useState(false);
+  const calibrationStartRef = useRef(0);
+  /** Bu odaklanmada düşük doğruluk yüzünden bir kez açıldı mı (Atla'dan sonra tekrar tekrar açılmasın) */
+  const autoShownRef = useRef(false);
+
+  const startCalibration = useCallback(() => {
+    calibrationStartRef.current = Date.now();
+    setCalibrating(true);
+  }, []);
+  const finishCalibration = useCallback(() => {
+    setCalibrating(false);
+    saveCompassCalibrated().catch(() => {});
+  }, []);
 
   const bearing = useMemo(() => qiblaBearing(place.latitude, place.longitude), [place]);
   const distanceKm = useMemo(() => kaabaDistanceKm(place.latitude, place.longitude), [place]);
@@ -165,6 +203,9 @@ export default function QiblaScreen() {
         return;
       }
       const delta = angleDiffSigned(prevNormalizedRef.current, deg);
+      // Yerel modül ~60 Hz gönderiyor; gözle görülmeyen değişimde kadranı (20'ye yakın dönen görünüm) hiç
+      // güncellemeyiz, yoksa telefon dururken bile JS iş parçacığı dolup dokunuşlar gecikiyor
+      if (!animate && Math.abs(delta) < MIN_STEP_DEG) return;
       prevNormalizedRef.current = deg;
       accumulatedRef.current += delta;
       if (animate) {
@@ -218,6 +259,11 @@ export default function QiblaScreen() {
       let cancelled = false;
       let cleanup: (() => void) | undefined;
       resetHeading();
+      autoShownRef.current = false;
+      qualityRef.current = 'unknown';
+      accuracyDegRef.current = null;
+      setQuality('unknown');
+      setAccuracyDeg(null);
       (async () => {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (cancelled) return;
@@ -229,10 +275,29 @@ export default function QiblaScreen() {
         const compass = Compass;
         if (compass?.isAvailable()) {
           const sub = compass.addListener('onHeading', (e) => {
-            setLowAccuracy(e.accuracy <= 1);
+            // ~60 Hz geliyor; aynı değerle bile setState ekranı (180 çentikli kadran) yeniden çizdirebiliyor,
+            // bu yüzden yalnız değişince ve sık değilse yazılır
+            const q = compassQuality(e.accuracy, e.accuracyDeg ?? -1);
+            if (q !== qualityRef.current) {
+              qualityRef.current = q;
+              setQuality(q);
+            }
+            const now = Date.now();
+            const deg = e.accuracyDeg > 0 ? Math.round(e.accuracyDeg) : null;
+            if (deg !== accuracyDegRef.current && now - lastAccuracyUpdateRef.current >= DISPLAY_THROTTLE_MS) {
+              lastAccuracyUpdateRef.current = now;
+              accuracyDegRef.current = deg;
+              setAccuracyDeg(deg);
+            }
             applyHeading(e.heading, false);
           });
           compass.start(place.latitude, place.longitude);
+          // İlk kez açılışta, doğruluk iyi görünse de bir kez kalibrasyon adımı (sensörler "iyi" deyip
+          // yine de sapabiliyor; kullanıcı da 8 çizmeyi öğrenmiş olur)
+          if (!(await loadCompassCalibrated()) && !cancelled) {
+            autoShownRef.current = true;
+            startCalibration();
+          }
           cleanup = () => {
             sub.remove();
             compass.stop();
@@ -247,8 +312,26 @@ export default function QiblaScreen() {
         cancelled = true;
         cleanup?.();
       };
-    }, [applyHeading, handleLocationHeading, resetHeading, place.latitude, place.longitude]),
+    }, [applyHeading, handleLocationHeading, resetHeading, startCalibration, place.latitude, place.longitude]),
   );
+
+  // Doğruluk bir süre düşük kalırsa kalibrasyon ekranı kendiliğinden açılır (her odaklanmada en çok bir kez)
+  useEffect(() => {
+    if (calibrating || quality !== 'low' || autoShownRef.current) return;
+    const id = setTimeout(() => {
+      autoShownRef.current = true;
+      startCalibration();
+    }, LOW_HOLD_MS);
+    return () => clearTimeout(id);
+  }, [quality, calibrating, startCalibration]);
+
+  // Kalibrasyon ekranı doğruluk iyi olup öyle kalınca kendiliğinden kapanır
+  useEffect(() => {
+    if (!calibrating || quality !== 'good') return;
+    const shownFor = Date.now() - calibrationStartRef.current;
+    const id = setTimeout(finishCalibration, Math.max(GOOD_HOLD_MS, CALIBRATION_MIN_MS - shownFor));
+    return () => clearTimeout(id);
+  }, [quality, calibrating, finishCalibration]);
 
   // Kadran (çentik, derece, harfler, kıble çizgisi) telefonla birlikte döner: birikimli açının tersi kadar
   // döndürülür, böylece K her zaman gerçek kuzeyi gösterir. Yazılar ise aynı açı kadar geri döndürülüp dik tutulur.
@@ -289,112 +372,126 @@ export default function QiblaScreen() {
       </View>
 
       <View style={styles.center}>
-        <View style={{ width: size, height: size }}>
-          {/* Sabit katman: zemin, artı işareti, orta daire ve kıble dilimi */}
-          <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
-            <Circle cx={g.c} cy={g.c} r={g.c - 2} fill={colors.card} />
-            {theme.background ? <Circle cx={g.c} cy={g.c} r={g.c - 2} fill="#000" opacity={0.3} /> : null}
-            <Line x1={g.c - g.arcInner} y1={g.c} x2={g.c + g.arcInner} y2={g.c} stroke={colors.muted} strokeWidth={1} opacity={0.5} />
-            <Line x1={g.c} y1={g.c - g.arcInner} x2={g.c} y2={g.c + g.arcInner} stroke={colors.muted} strokeWidth={1} opacity={0.5} />
-            <Circle cx={g.c} cy={g.c} r={g.arcInner * 0.48} fill={aligned ? colors.green : colors.text} opacity={aligned ? 0.25 : 0.07} />
-          </Svg>
-          <QiblaArc size={size} color={arcColor} register={registerArc} />
+        {calibrating ? (
+          <CalibrationOverlay colors={colors} quality={quality} accuracyDeg={accuracyDeg} onSkip={finishCalibration} />
+        ) : (
+          <>
+            <View style={{ width: size, height: size }}>
+              {/* Sabit katman: zemin, artı işareti, orta daire ve kıble dilimi */}
+              <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
+                <Circle cx={g.c} cy={g.c} r={g.c - 2} fill={colors.card} />
+                {theme.background ? <Circle cx={g.c} cy={g.c} r={g.c - 2} fill="#000" opacity={0.3} /> : null}
+                <Line x1={g.c - g.arcInner} y1={g.c} x2={g.c + g.arcInner} y2={g.c} stroke={colors.muted} strokeWidth={1} opacity={0.5} />
+                <Line x1={g.c} y1={g.c - g.arcInner} x2={g.c} y2={g.c + g.arcInner} stroke={colors.muted} strokeWidth={1} opacity={0.5} />
+                <Circle cx={g.c} cy={g.c} r={g.arcInner * 0.48} fill={aligned ? colors.green : colors.text} opacity={aligned ? 0.25 : 0.07} />
+              </Svg>
+              <QiblaArc size={size} color={arcColor} register={registerArc} />
 
-          {/* Dönen kadran */}
-          <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ rotate: dialRotate }] }]}>
-            <Svg width={size} height={size}>
-              {TICKS.map((deg) => {
-                const major = deg % 30 === 0;
-                const cardinal = deg % 90 === 0;
-                const len = cardinal ? 22 : major ? 18 : deg % 10 === 0 ? 12 : 8;
-                const a = polar(g.c, g.tickOuter, deg);
-                const b = polar(g.c, g.tickOuter - len, deg);
-                return (
-                  <Line
-                    key={deg}
-                    x1={a.x}
-                    y1={a.y}
-                    x2={b.x}
-                    y2={b.y}
-                    stroke={major ? colors.text : colors.muted}
-                    strokeWidth={cardinal ? 3 : major ? 2.5 : 1}
-                    opacity={major ? 1 : 0.7}
+              {/* Dönen kadran */}
+              <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ rotate: dialRotate }] }]}>
+                <Svg width={size} height={size}>
+                  {TICKS.map((deg) => {
+                    const major = deg % 30 === 0;
+                    const cardinal = deg % 90 === 0;
+                    const len = cardinal ? 22 : major ? 18 : deg % 10 === 0 ? 12 : 8;
+                    const a = polar(g.c, g.tickOuter, deg);
+                    const b = polar(g.c, g.tickOuter - len, deg);
+                    return (
+                      <Line
+                        key={deg}
+                        x1={a.x}
+                        y1={a.y}
+                        x2={b.x}
+                        y2={b.y}
+                        stroke={major ? colors.text : colors.muted}
+                        strokeWidth={cardinal ? 3 : major ? 2.5 : 1}
+                        opacity={major ? 1 : 0.7}
+                      />
+                    );
+                  })}
+                  {/* Kuzey: kırmızı üçgen */}
+                  <Polygon
+                    points={[polar(g.c, g.tickOuter + 4, 0), polar(g.c, g.tickOuter + 15, -4), polar(g.c, g.tickOuter + 15, 4)]
+                      .map((p) => `${p.x},${p.y}`)
+                      .join(' ')}
+                    fill={colors.danger}
                   />
-                );
-              })}
-              {/* Kuzey: kırmızı üçgen */}
-              <Polygon
-                points={[polar(g.c, g.tickOuter + 4, 0), polar(g.c, g.tickOuter + 15, -4), polar(g.c, g.tickOuter + 15, 4)]
-                  .map((p) => `${p.x},${p.y}`)
-                  .join(' ')}
-                fill={colors.danger}
+                  {/* Kıble çizgisi */}
+                  {(() => {
+                    const a = polar(g.c, g.arcOuter - 6, bearing);
+                    const b = polar(g.c, g.tickOuter + 14, bearing);
+                    return <Line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={arcColor} strokeWidth={4} strokeLinecap="round" />;
+                  })()}
+                </Svg>
+
+                {DEGREE_LABELS.filter((deg) => Math.abs(angleDiffSigned(deg, bearing)) > 14).map((deg) =>
+                  label(`n${deg}`, deg, g.numberR, String(deg), styles.degreeLabel),
+                )}
+                {label('qibla', bearing, g.numberR + 2, String(qiblaRounded), [styles.qiblaLabel, { color: arcColor }])}
+                {CARDINALS.map((c) => label(`c${c.deg}`, c.deg, g.cardinalR, c.label, styles.cardinalLabel))}
+              </Animated.View>
+
+              {/* Sabit yön çizgisi: telefonun baktığı yön (ekranın tepesi) */}
+              <View
+                pointerEvents="none"
+                style={[
+                  styles.pointer,
+                  {
+                    left: g.c - 2.5,
+                    top: g.c - g.tickOuter - 12,
+                    height: g.tickOuter - g.arcOuter + 12,
+                    backgroundColor: aligned ? colors.green : colors.text,
+                  },
+                ]}
               />
-              {/* Kıble çizgisi */}
-              {(() => {
-                const a = polar(g.c, g.arcOuter - 6, bearing);
-                const b = polar(g.c, g.tickOuter + 14, bearing);
-                return <Line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={arcColor} strokeWidth={4} strokeLinecap="round" />;
-              })()}
-            </Svg>
-
-            {DEGREE_LABELS.filter((deg) => Math.abs(angleDiffSigned(deg, bearing)) > 14).map((deg) =>
-              label(`n${deg}`, deg, g.numberR, String(deg), styles.degreeLabel),
-            )}
-            {label('qibla', bearing, g.numberR + 2, String(qiblaRounded), [styles.qiblaLabel, { color: arcColor }])}
-            {CARDINALS.map((c) => label(`c${c.deg}`, c.deg, g.cardinalR, c.label, styles.cardinalLabel))}
-          </Animated.View>
-
-          {/* Sabit yön çizgisi: telefonun baktığı yön (ekranın tepesi) */}
-          <View
-            pointerEvents="none"
-            style={[
-              styles.pointer,
-              {
-                left: g.c - 2.5,
-                top: g.c - g.tickOuter - 12,
-                height: g.tickOuter - g.arcOuter + 12,
-                backgroundColor: aligned ? colors.green : colors.text,
-              },
-            ]}
-          />
-        </View>
-
-        <View style={styles.readout}>
-          {denied ? (
-            <Text style={styles.statusText}>Konum izni verilmedi</Text>
-          ) : signedDiff === null ? (
-            <Text style={styles.statusText}>Pusula başlatılıyor…</Text>
-          ) : aligned ? (
-            <View style={styles.bigRow}>
-              <MaterialCommunityIcons name="check-circle" size={40} color={colors.green} />
-              <Text style={[styles.alignedText, { color: colors.green }]}>Kıbleye dönüksün</Text>
             </View>
-          ) : (
-            <View style={styles.bigRow}>
-              <MaterialCommunityIcons
-                name={signedDiff > 0 ? 'arrow-right-bottom' : 'arrow-left-bottom'}
-                size={36}
-                color={colors.text}
-                style={styles.turnIcon}
-              />
-              <Text style={styles.bigDegrees}>{Math.round(absDiff ?? 0)}°</Text>
-              <Text style={styles.bigWord}>{signedDiff > 0 ? 'sağa' : 'sola'}</Text>
+
+            <View style={styles.readout}>
+              {denied ? (
+                <Text style={styles.statusText}>Konum izni verilmedi</Text>
+              ) : signedDiff === null ? (
+                <Text style={styles.statusText}>Pusula başlatılıyor…</Text>
+              ) : aligned ? (
+                <View style={styles.bigRow}>
+                  <MaterialCommunityIcons name="check-circle" size={40} color={colors.green} />
+                  <Text style={[styles.alignedText, { color: colors.green }]}>Kıbleye dönüksün</Text>
+                </View>
+              ) : (
+                <View style={styles.bigRow}>
+                  <MaterialCommunityIcons
+                    name={signedDiff > 0 ? 'arrow-right-bottom' : 'arrow-left-bottom'}
+                    size={36}
+                    color={colors.text}
+                    style={styles.turnIcon}
+                  />
+                  <Text style={styles.bigDegrees}>{Math.round(absDiff ?? 0)}°</Text>
+                  <Text style={styles.bigWord}>{signedDiff > 0 ? 'sağa' : 'sola'}</Text>
+                </View>
+              )}
+              {displayHeading !== null ? (
+                <Text style={styles.info}>
+                  Yön {Math.round(displayHeading) % 360}° {directionLabel(displayHeading)} · Kıble {qiblaRounded}°
+                </Text>
+              ) : null}
+              <Text style={styles.info}>
+                {place.name} · Kâbe'ye {formatKm(distanceKm)} km
+              </Text>
+              <Text style={[styles.hint, quality === 'low' && { color: colors.danger }]}>
+                {quality === 'low'
+                  ? `Doğruluk düşük${accuracyDeg !== null ? ` (±${accuracyDeg}°)` : ''} · Kalibre etmen gerekiyor`
+                  : quality === 'medium'
+                    ? `Doğruluk orta${accuracyDeg !== null ? ` (±${accuracyDeg}°)` : ''} · Kalibre etmek yönü düzeltir`
+                    : `Telefonu düz tutun, metal cisimlerden uzak durun${accuracyDeg !== null ? ` · ±${accuracyDeg}°` : ''}`}
+              </Text>
+              {Compass?.isAvailable() && !denied ? (
+                <TouchableOpacity style={styles.calibrateButton} onPress={startCalibration} hitSlop={8}>
+                  <MaterialCommunityIcons name="rotate-3d-variant" size={18} color={colors.accent} />
+                  <Text style={styles.calibrateText}>Kalibre et</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
-          )}
-          {displayHeading !== null ? (
-            <Text style={styles.info}>
-              Yön {Math.round(displayHeading) % 360}° {directionLabel(displayHeading)} · Kıble {qiblaRounded}°
-            </Text>
-          ) : null}
-          <Text style={styles.info}>
-            {place.name} · Kâbe'ye {formatKm(distanceKm)} km
-          </Text>
-          <Text style={[styles.hint, lowAccuracy && { color: colors.danger }]}>
-            {lowAccuracy
-              ? 'Doğruluk düşük · Cihazı havada 8 şeklinde hareket ettirin'
-              : 'Telefonu düz tutun, metal cisimlerden uzak durun'}
-          </Text>
-        </View>
+          </>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -430,5 +527,17 @@ function makeStyles(colors: ThemeColors) {
     statusText: { color: colors.muted, fontSize: 18, fontWeight: '500' },
     info: { color: colors.text, fontSize: 15, marginTop: 8, textAlign: 'center' },
     hint: { color: colors.muted, fontSize: 12, textAlign: 'center', marginTop: 10, lineHeight: 18 },
+    calibrateButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    calibrateText: { color: colors.accent, fontSize: 13, fontWeight: '700' },
   });
 }

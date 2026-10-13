@@ -38,6 +38,21 @@ export async function savePlace(p: Place): Promise<void> {
   await AsyncStorage.setItem(PLACE_KEY, JSON.stringify(p));
 }
 
+const COMPASS_CALIBRATED_KEY = 'compassCalibrated:v1';
+
+/** Kıble ekranı ilk açılışta kalibrasyon adımını bir kez, doğruluk iyi olsa da göstersin diye */
+export async function loadCompassCalibrated(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(COMPASS_CALIBRATED_KEY)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export async function saveCompassCalibrated(): Promise<void> {
+  await AsyncStorage.setItem(COMPASS_CALIBRATED_KEY, '1');
+}
+
 export async function loadThemeId(): Promise<ThemeId> {
   try {
     const raw = await AsyncStorage.getItem(THEME_KEY);

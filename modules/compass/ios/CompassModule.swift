@@ -35,8 +35,8 @@ public class CompassModule: Module {
   private func startUpdates() {
     guard manager == nil, CLLocationManager.headingAvailable() else { return }
     let m = CLLocationManager()
-    let d = HeadingDelegate { [weak self] heading, accuracy in
-      self?.sendEvent("onHeading", ["heading": heading, "accuracy": accuracy])
+    let d = HeadingDelegate { [weak self] heading, accuracy, accuracyDeg in
+      self?.sendEvent("onHeading", ["heading": heading, "accuracy": accuracy, "accuracyDeg": accuracyDeg])
     }
     m.delegate = d
     m.headingFilter = kCLHeadingFilterNone
@@ -59,13 +59,13 @@ public class CompassModule: Module {
 }
 
 private class HeadingDelegate: NSObject, CLLocationManagerDelegate {
-  private let onHeading: (Double, Int) -> Void
+  private let onHeading: (Double, Int, Double) -> Void
   private var fSin = 0.0
   private var fCos = 0.0
   private var hasValue = false
   private var lastEmit: TimeInterval = 0
 
-  init(onHeading: @escaping (Double, Int) -> Void) {
+  init(onHeading: @escaping (Double, Int, Double) -> Void) {
     self.onHeading = onHeading
   }
 
@@ -87,15 +87,16 @@ private class HeadingDelegate: NSObject, CLLocationManagerDelegate {
     lastEmit = now
     var heading = atan2(fSin, fCos) * 180 / .pi
     if heading < 0 { heading += 360 }
-    onHeading(heading, Self.accuracyLevel(newHeading.headingAccuracy))
+    onHeading(heading, Self.accuracyLevel(newHeading.headingAccuracy), newHeading.headingAccuracy)
   }
 
-  /// Sapma derecesini Android'in kalibrasyon düzeyine çevirir: 0 güvenilmez … 3 yüksek
+  /// Sapma derecesini Android'in kalibrasyon düzeyine çevirir: 0 güvenilmez … 3 yüksek.
+  /// Kıble için 15° bile fazla (eskiden 30°'ye kadar "orta" sayılıyor, uyarı hiç çıkmıyordu).
   static func accuracyLevel(_ degrees: CLLocationDirection) -> Int {
     if degrees < 0 { return 0 }
-    if degrees <= 15 { return 3 }
-    if degrees <= 30 { return 2 }
-    if degrees <= 45 { return 1 }
+    if degrees <= 10 { return 3 }
+    if degrees <= 20 { return 2 }
+    if degrees <= 35 { return 1 }
     return 0
   }
 

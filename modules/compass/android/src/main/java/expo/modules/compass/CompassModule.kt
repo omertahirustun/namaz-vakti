@@ -29,6 +29,11 @@ class CompassModule : Module(), SensorEventListener {
   private var declination = 0f
   /** Manyetometre kalibrasyon durumu (SensorManager.SENSOR_STATUS_*) */
   private var accuracy = SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM
+  /**
+   * Füzyon sensörünün kendi tahmini yön hatası (derece, values[4]); bildirmeyen (ya da 0 gönderen) cihazlarda -1.
+   * Manyetometrenin durum düzeyi kaba kalıyor (15–20° saparken "yüksek" diyen cihazlar var), bu daha dürüst.
+   */
+  private var accuracyDeg = -1.0
 
   private val rotation = FloatArray(9)
   private val remapped = FloatArray(9)
@@ -91,6 +96,7 @@ class CompassModule : Module(), SensorEventListener {
     // Kalibrasyon durumunu manyetometre bildirir; RAW kipte veri de buradan gelir
     if (mag != null) sm.registerListener(this, mag, SensorManager.SENSOR_DELAY_GAME)
     hasValue = false
+    accuracyDeg = -1.0
     gravity = null
     geomagnetic = null
     registered = true
@@ -108,8 +114,10 @@ class CompassModule : Module(), SensorEventListener {
 
   override fun onSensorChanged(event: SensorEvent) {
     when (event.sensor.type) {
-      Sensor.TYPE_ROTATION_VECTOR, Sensor.TYPE_GEOMAGNETIC_ROTATION_VECTOR ->
+      Sensor.TYPE_ROTATION_VECTOR, Sensor.TYPE_GEOMAGNETIC_ROTATION_VECTOR -> {
         SensorManager.getRotationMatrixFromVector(rotation, event.values)
+        accuracyDeg = if (event.values.size > 4 && event.values[4] > 0f) Math.toDegrees(event.values[4].toDouble()) else -1.0
+      }
       Sensor.TYPE_ACCELEROMETER -> {
         gravity = lowPass(event.values, gravity)
         return
@@ -152,7 +160,7 @@ class CompassModule : Module(), SensorEventListener {
     if (now - lastEmit < 16) return
     lastEmit = now
     val out = (Math.toDegrees(atan2(fSin, fCos)) + 360.0) % 360.0
-    sendEvent("onHeading", mapOf("heading" to out, "accuracy" to accuracy))
+    sendEvent("onHeading", mapOf("heading" to out, "accuracy" to accuracy, "accuracyDeg" to accuracyDeg))
   }
 
   private fun lowPass(input: FloatArray, prev: FloatArray?): FloatArray {
