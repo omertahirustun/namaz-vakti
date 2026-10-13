@@ -123,7 +123,6 @@ export default function HomeScreen() {
                   </View>
                 </View>
               ) : null}
-              <SponsorBadge />
             </>
           ) : loading ? (
             <ActivityIndicator color={colors.onHero} />
@@ -131,6 +130,7 @@ export default function HomeScreen() {
             <Text style={styles.heroLabel}>Vakit bilgisi yok</Text>
           )}
         </LinearGradient>
+        <SponsorBadge color={colors.muted} />
 
         <ExactAlarmHint styles={styles} colors={colors} />
 
