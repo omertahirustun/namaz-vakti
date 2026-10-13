@@ -16,6 +16,8 @@ const DISMISS_AFTER_MS = 60 * 60_000;
 // iOS en fazla 64 yerel bildirim planlamaya izin verir (~12 gün). Android'de
 // sınır uygulama başına 500 alarm; 30 günü rahat karşılar.
 const MAX_SCHEDULED = Platform.OS === 'ios' ? 60 : 200;
+/** expo-notifications'ın kendi kurmadığı bildirimlere verdiği kimlik (ExpoPresentationDelegate) */
+const FOREIGN_NOTIFICATION_PREFIX = 'expo-notifications://foreign_notifications';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -111,10 +113,16 @@ async function dismissStaleNotifications(): Promise<void> {
     const now = Date.now();
     const shown = await Notifications.getPresentedNotificationsAsync();
     for (const n of shown) {
+      // expo-notifications dışında kurulanlar (kalıcı "vakte kalan" bildirimi, modules/ongoing-notification) bu
+      // kimlikle gelir; onlar dismissAt taşımaz ve silinmemeli
+      if (n.request.identifier.startsWith(FOREIGN_NOTIFICATION_PREFIX)) continue;
       const dismissAt = Number(n.request.content.data?.dismissAt ?? 0);
       if (dismissAt <= now) await Notifications.dismissNotificationAsync(n.request.identifier);
     }
-    await Notifications.setBadgeCountAsync(0);
+    // Yalnız iOS: expo-notifications Android'de sayacı 0'lamak için uygulamanın TÜM bildirimlerini siliyor
+    // (BadgeHelper → cancelAll); vakti girmiş bildirimler ve kalıcı bildirim de gidiyordu. Android'de kanalda
+    // rozet zaten kapalı (showBadge: false).
+    if (Platform.OS === 'ios') await Notifications.setBadgeCountAsync(0);
   } catch {
     // sayaç/çekmece temizliği başarısız olsa da planlama sürsün
   }

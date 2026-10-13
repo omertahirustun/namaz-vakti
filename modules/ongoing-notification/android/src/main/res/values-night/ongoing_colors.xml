@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="ongoing_active_stroke">#A9B8FF</color>
+  <color name="ongoing_active_fill">#22A9B8FF</color>
+</resources>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Sıradaki vaktin çerçevesi; koyu çekmecede (values-night) açık tonu -->
+  <color name="ongoing_active_stroke">#243AA2</color>
+  <color name="ongoing_active_fill">#14243AA2</color>
+</resources>

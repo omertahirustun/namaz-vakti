@@ -34,6 +34,8 @@ export interface Settings {
   method: number;
   /** Ana ekran widget'larının görünümü ('theme' = uygulamanın seçili teması) */
   widgetStyle: WidgetStyle;
+  /** Bildirim çekmecesinde sıradaki vakte geri sayan kalıcı bildirim (yalnız Android) */
+  ongoingNotification: boolean;
 }
 
 export type WidgetStyle = 'theme' | 'transparent' | 'gray' | 'black' | 'white';
@@ -52,6 +54,7 @@ export const DEFAULT_SETTINGS: Settings = {
   enabled: { Fajr: true, Sunrise: false, Dhuhr: true, Asr: true, Maghrib: true, Isha: true },
   method: 13,
   widgetStyle: 'theme',
+  ongoingNotification: false,
 };
 
 export const DEFAULT_PLACE: Place = {

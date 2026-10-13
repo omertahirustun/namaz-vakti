@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
+import { syncOngoingNotification } from '../ongoing';
 import { usePrayer } from '../PrayerContext';
 import { useTheme } from '../ThemeContext';
 
@@ -25,6 +26,12 @@ export default function WidgetSync() {
     });
     return () => sub.remove();
   }, []);
+
+  // Kalıcı "vakte kalan" bildirimi de aynı veriyle güncellenir (yalnız Android; modül yoksa sessizce geçer)
+  useEffect(() => {
+    if (days.length === 0) return;
+    syncOngoingNotification(days, place.name, settings.ongoingNotification);
+  }, [place.name, settings.ongoingNotification, days, foregrounds]);
 
   useEffect(() => {
     if (!enabled || days.length === 0) return;

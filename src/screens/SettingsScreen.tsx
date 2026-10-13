@@ -4,7 +4,8 @@ import { Alert, Image, Platform, ScrollView, StyleSheet, Switch, TouchableOpacit
 import Text from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { needsExactAlarmSetting, openBatterySettings, openExactAlarmSettings } from '../notifications';
+import { ensureNotificationPermission, needsExactAlarmSetting, openBatterySettings, openExactAlarmSettings } from '../notifications';
+import { ongoingSupported } from '../ongoing';
 import { usePrayer } from '../PrayerContext';
 import { useTheme } from '../ThemeContext';
 import { photoTextShadow, radius, THEME_ORDER, ThemeColors, THEMES } from '../theme';
@@ -32,6 +33,14 @@ export default function SettingsScreen() {
     } catch {
       Alert.alert('Konum alınamadı', 'Biraz sonra tekrar dene.');
     }
+  };
+
+  const toggleOngoing = async (on: boolean) => {
+    if (on && !(await ensureNotificationPermission())) {
+      Alert.alert('Bildirim izni gerekli', 'Telefon ayarlarından uygulamanın bildirimlerine izin verip tekrar dene.');
+      return;
+    }
+    updateSettings({ ongoingNotification: on });
   };
 
   const openSetting = async (open: () => Promise<void>) => {
@@ -124,6 +133,20 @@ export default function SettingsScreen() {
               thumbColor="#FFFFFF"
             />
           </View>
+          {ongoingSupported ? (
+            <View style={[styles.rowBetween, styles.sep]}>
+              <View style={styles.rowText}>
+                <Text style={styles.label}>Kalıcı bildirimde kalan süre</Text>
+                <Text style={styles.hint}>Bildirim çekmecesinde sıradaki vakte canlı geri sayım</Text>
+              </View>
+              <Switch
+                value={settings.ongoingNotification}
+                onValueChange={toggleOngoing}
+                trackColor={{ true: colors.accent, false: colors.border }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+          ) : null}
         </View>
 
         {settings.notificationsEnabled ? (
