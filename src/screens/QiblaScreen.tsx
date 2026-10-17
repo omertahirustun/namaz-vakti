@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
-import Svg, { Circle, Line, Path, Polygon } from 'react-native-svg';
+import { Animated, Easing, StyleSheet, TouchableOpacity, useWindowDimensions, Vibration, View } from 'react-native';
+import Svg, { Circle, Defs, Line, LinearGradient, Path, Polygon, RadialGradient, Rect, Stop } from 'react-native-svg';
 import Text from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -42,8 +42,6 @@ const CARDINALS = [
 ];
 const DEGREE_LABELS = Array.from({ length: 12 }, (_, i) => i * 30);
 const DIRECTIONS_8 = ['K', 'KD', 'D', 'GD', 'G', 'GB', 'B', 'KB'];
-/** Telefon yönü ile kıble arasındaki dilimin rengi (kıbleye dönünce yeşile döner) */
-const ARC_COLOR = '#D4A055';
 /** Bu kadar dereceden yakınsa "kıbleye dönük" sayılır. */
 const ALIGNED_DEG = 5;
 /** Kalibrasyon ekranı doğruluk "iyi" olunca en az bu kadar açık kalsın (kullanıcı 8'i görsün)… */
@@ -75,15 +73,19 @@ function formatKm(km: number) {
 /** Kadran geometrisi (merkezden yarıçaplar), boyuta göre. */
 function dialGeometry(size: number) {
   const c = size / 2;
-  const tickOuter = c - 50;
-  const arcOuter = tickOuter - 24;
+  /** Yüzün kenarı (dışında tema renginde çerçeve) */
+  const face = c - 12;
   return {
     c,
-    numberR: c - 20,
-    tickOuter,
-    arcOuter,
-    arcInner: arcOuter - c * 0.26,
-    cardinalR: tickOuter - 46,
+    face,
+    tickOuter: face - 5,
+    /** Derece sayıları, ana yön harfleri ve Kâbe rozeti bu halkada */
+    labelR: face - 40,
+    /** Telefon yönünden kıbleye uzanan ince dilim */
+    arcOuter: face - 62,
+    arcInner: face - 70,
+    /** İbre ucu */
+    needleR: face - 64,
   };
 }
 
@@ -105,8 +107,8 @@ function arcPath(c: number, ro: number, ri: number, delta: number) {
 }
 
 /**
- * Ekranın tepesinden (telefonun baktığı yön) kıbleye uzanan dilim. Pusula ~60 Hz veri gönderdiği için kendi
- * state'iyle yalnız bu katman yeniden çizilir; ana ekran saniyede birkaç kez güncellenir.
+ * Ekranın tepesinden (telefonun baktığı yön) kıbleye uzanan ince dilim. Pusula ~60 Hz veri gönderdiği için kendi
+ * state'iyle yalnız bu katman yeniden çizilir.
  */
 const QiblaArc = memo(function QiblaArc({
   size,
@@ -123,13 +125,253 @@ const QiblaArc = memo(function QiblaArc({
   }, [register]);
   const g = dialGeometry(size);
   return (
-    <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
+    <Svg width={size} height={size} style={StyleSheet.absoluteFill} pointerEvents="none">
       {delta !== null && Math.abs(delta) >= 0.5 ? (
-        <Path d={arcPath(g.c, g.arcOuter, g.arcInner, delta)} fill={color} opacity={0.9} />
+        <Path d={arcPath(g.c, g.arcOuter, g.arcInner, delta)} fill={color} opacity={0.55} />
       ) : null}
     </Svg>
   );
 });
+
+const GOLD = '#D4A055';
+const GOLD_DARK = '#9C7130';
+const GOLD_LIGHT = '#F1D39A';
+const BADGE = 38;
+
+/** Kâbe: altın çerçeveli rozet içinde siyah küp, altın kuşak ve kapı */
+function KaabaBadge({ glow }: { glow: string }) {
+  const s = BADGE;
+  const h = s / 2;
+  return (
+    <Svg width={s} height={s}>
+      <Defs>
+        <LinearGradient id="kGold" x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0" stopColor={GOLD_LIGHT} />
+          <Stop offset="1" stopColor={GOLD_DARK} />
+        </LinearGradient>
+      </Defs>
+      <Circle cx={h} cy={h} r={h - 1} fill="url(#kGold)" stroke={glow} strokeWidth={1.5} />
+      <Rect x={h - 9} y={h - 9} width={18} height={18} rx={2} fill="#141414" />
+      <Rect x={h - 9} y={h - 5} width={18} height={3.2} fill={GOLD_LIGHT} />
+      <Rect x={h + 2} y={h + 2} width={4} height={7} rx={0.8} fill={GOLD} />
+    </Svg>
+  );
+}
+
+/**
+ * Kadran: tema renginde çerçeve, ışıklı yüz, dönen çentik/yazı halkası, kıble ibresi ve Kâbe rozeti, tepede sabit
+ * yön üçgeni. 180 çentikli SVG pahalı; yön değiştikçe yalnız Animated dönüşü (native) değişir, bu bileşen ise yalnız
+ * boyut, tema, kıble açısı ya da hizalanma değişince yeniden çizilir. Kıbleye dönünce Kâbe büyür, çevrede yeşil
+ * ışık nabız gibi atar.
+ */
+const Dial = memo(function Dial({
+  size,
+  colors,
+  photo,
+  bearing,
+  aligned,
+  registerArc,
+  dialRotate,
+  uprightRotate,
+  styles,
+}: {
+  size: number;
+  colors: ThemeColors;
+  photo: boolean;
+  bearing: number;
+  aligned: boolean;
+  registerArc: (setter: (delta: number) => void) => void;
+  dialRotate: Animated.AnimatedInterpolation<string>;
+  uprightRotate: Animated.AnimatedInterpolation<string>;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  const g = dialGeometry(size);
+  const markColor = aligned ? colors.green : GOLD;
+
+  // Açılışta kadran yaylanarak belirir
+  const enter = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(enter, { toValue: 1, friction: 7, tension: 50, useNativeDriver: true }).start();
+  }, [enter]);
+
+  // Hizalanınca Kâbe rozeti büyür, yeşil hâle nabız gibi atar
+  const alignAnim = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(alignAnim, { toValue: aligned ? 1 : 0, friction: 5, tension: 90, useNativeDriver: true }).start();
+    if (!aligned) {
+      pulse.stopAnimation();
+      pulse.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 900, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 900, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [aligned, alignAnim, pulse]);
+
+  const badgeScale = alignAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.25] });
+  const glowOpacity = Animated.multiply(alignAnim, pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.8] }));
+  const glowScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.045] });
+
+  /** Kadranda dönen, ama ekranda hep dik duran yazı. */
+  const label = (key: string, deg: number, text: string, style: object) => {
+    const p = polar(g.c, g.labelR, deg);
+    return (
+      <Animated.View
+        key={key}
+        style={[styles.labelBox, { left: p.x - 30, top: p.y - 15, transform: [{ rotate: uprightRotate }] }]}
+      >
+        <Text style={style}>{text}</Text>
+      </Animated.View>
+    );
+  };
+
+  const badge = polar(g.c, g.labelR, bearing);
+  const tip = polar(g.c, g.needleR, bearing);
+  const tail = polar(g.c, 22, bearing + 180);
+  const side = (d: number) => polar(g.c, 7, bearing + d);
+  const faceBase = photo ? '#10131C' : colors.card;
+
+  return (
+    <Animated.View
+      style={{
+        width: size,
+        height: size,
+        opacity: enter,
+        transform: [{ scale: enter.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }],
+      }}
+    >
+      {/* Kıbleye dönünce dışta yeşil ışık */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          StyleSheet.absoluteFill,
+          styles.glow,
+          { borderColor: colors.green, opacity: glowOpacity, transform: [{ scale: glowScale }] },
+        ]}
+      />
+
+      {/* Sabit katman: çerçeve ve ışıklı yüz */}
+      <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
+        <Defs>
+          <LinearGradient id="bezel" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor={colors.accent} stopOpacity={0.95} />
+            <Stop offset="1" stopColor={colors.text} stopOpacity={0.9} />
+          </LinearGradient>
+          <RadialGradient id="face" cx="50%" cy="38%" r="70%">
+            <Stop offset="0" stopColor="#FFFFFF" stopOpacity={photo ? 0.1 : 0.9} />
+            <Stop offset="0.55" stopColor={faceBase} stopOpacity={photo ? 0.75 : 1} />
+            <Stop offset="1" stopColor={photo ? '#000000' : colors.border} stopOpacity={photo ? 0.85 : 1} />
+          </RadialGradient>
+        </Defs>
+        <Circle cx={g.c} cy={g.c} r={g.c - 1} fill="url(#bezel)" />
+        <Circle cx={g.c} cy={g.c} r={g.face} fill="url(#face)" />
+        <Circle cx={g.c} cy={g.c} r={g.face} fill="none" stroke="#000" strokeOpacity={0.12} strokeWidth={1} />
+      </Svg>
+
+      <QiblaArc size={size} color={markColor} register={registerArc} />
+
+      {/* Dönen kadran: çentikler, sayılar, ana yönler, ibre ve Kâbe */}
+      <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ rotate: dialRotate }] }]}>
+        <Svg width={size} height={size}>
+          <Defs>
+            <LinearGradient id="needle" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={aligned ? colors.green : GOLD_LIGHT} />
+              <Stop offset="1" stopColor={aligned ? colors.green : GOLD_DARK} />
+            </LinearGradient>
+          </Defs>
+          {TICKS.map((deg) => {
+            const major = deg % 30 === 0;
+            const cardinal = deg % 90 === 0;
+            const len = cardinal ? 16 : major ? 12 : deg % 10 === 0 ? 8 : 4;
+            const a = polar(g.c, g.tickOuter, deg);
+            const b = polar(g.c, g.tickOuter - len, deg);
+            return (
+              <Line
+                key={deg}
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke={deg === 0 ? colors.danger : major ? colors.text : colors.muted}
+                strokeWidth={cardinal ? 2.5 : major ? 2 : 1}
+                strokeOpacity={major ? 1 : 0.55}
+                strokeLinecap="round"
+              />
+            );
+          })}
+          {/* Kıble ibresi: merkezden Kâbe'ye sivrilen altın ok */}
+          <Polygon
+            points={[tip, side(90), tail, side(-90)].map((p) => `${p.x},${p.y}`).join(' ')}
+            fill="url(#needle)"
+            stroke={GOLD_DARK}
+            strokeOpacity={0.4}
+            strokeWidth={0.8}
+          />
+        </Svg>
+
+        {DEGREE_LABELS.filter((deg) => deg % 90 !== 0 && Math.abs(angleDiffSigned(deg, bearing)) > 16).map((deg) =>
+          label(`n${deg}`, deg, String(deg), styles.degreeLabel),
+        )}
+        {CARDINALS.filter((c) => Math.abs(angleDiffSigned(c.deg, bearing)) > 12).map((c) =>
+          label(`c${c.deg}`, c.deg, c.label, [styles.cardinalLabel, c.deg === 0 && { color: colors.danger }]),
+        )}
+
+        <Animated.View
+          style={[
+            styles.badge,
+            {
+              left: badge.x - BADGE / 2,
+              top: badge.y - BADGE / 2,
+              transform: [{ rotate: uprightRotate }, { scale: badgeScale }],
+            },
+          ]}
+        >
+          <KaabaBadge glow={aligned ? colors.green : '#FFFFFF'} />
+        </Animated.View>
+      </Animated.View>
+
+      {/* Tepede sabit üçgen: telefonun baktığı yön */}
+      <Svg width={size} height={size} style={StyleSheet.absoluteFill} pointerEvents="none">
+        <Polygon
+          points={`${g.c - 9},4 ${g.c + 9},4 ${g.c},20`}
+          fill={aligned ? colors.green : '#FFFFFF'}
+          stroke={aligned ? colors.green : colors.text}
+          strokeWidth={1.2}
+          strokeLinejoin="round"
+        />
+        {/* Merkez göbeği */}
+        <Circle cx={g.c} cy={g.c} r={9} fill={markColor} />
+        <Circle cx={g.c} cy={g.c} r={4} fill="#FFFFFF" />
+      </Svg>
+
+    </Animated.View>
+  );
+});
+
+/** Dönülecek yönü gösteren ok; açı değiştikçe yaylanarak döner (telefonun tepesine göre kıblenin yönü) */
+function TurnArrow({ diff, styles }: { diff: number; styles: ReturnType<typeof makeStyles> }) {
+  const rot = useRef(new Animated.Value(diff)).current;
+  useEffect(() => {
+    Animated.spring(rot, { toValue: diff, friction: 8, tension: 70, useNativeDriver: true }).start();
+  }, [diff, rot]);
+  const rotate = rot.interpolate({ inputRange: [-180, 180], outputRange: ['-180deg', '180deg'] });
+  return (
+    <View style={styles.turnCircle}>
+      {/* Yukarı bakan ok (0° = telefonun tepesi); kıblenin bulunduğu yöne döner */}
+      <Animated.View style={{ transform: [{ rotate }] }}>
+        <Svg width={30} height={30}>
+          <Polygon points="15,2 27,15 19,15 19,28 11,28 11,15 3,15" fill="#FFFFFF" strokeLinejoin="round" />
+        </Svg>
+      </Animated.View>
+    </View>
+  );
+}
 
 export default function QiblaScreen() {
   const { place } = usePrayer();
@@ -336,34 +578,25 @@ export default function QiblaScreen() {
   // Kadran (çentik, derece, harfler, kıble çizgisi) telefonla birlikte döner: birikimli açının tersi kadar
   // döndürülür, böylece K her zaman gerçek kuzeyi gösterir. Yazılar ise aynı açı kadar geri döndürülüp dik tutulur.
   // Doğrusal interpolasyon aralık dışına da uzanır (unwrap edilmiş büyük/negatif değerler dahil).
-  const dialRotate = headingAnim.interpolate({
-    inputRange: [0, 360],
-    outputRange: ['0deg', '-360deg'],
-  });
-  const uprightRotate = headingAnim.interpolate({
-    inputRange: [0, 360],
-    outputRange: ['0deg', '360deg'],
-  });
+  // Sabit kimlikli olmalı; her çizimde yeni interpolate düğümü kadranın (Dial) memo'sunu bozar
+  const dialRotate = useMemo(
+    () => headingAnim.interpolate({ inputRange: [0, 360], outputRange: ['0deg', '-360deg'] }),
+    [headingAnim],
+  );
+  const uprightRotate = useMemo(
+    () => headingAnim.interpolate({ inputRange: [0, 360], outputRange: ['0deg', '360deg'] }),
+    [headingAnim],
+  );
 
-  const g = dialGeometry(size);
   const signedDiff = displayHeading === null ? null : angleDiffSigned(displayHeading, bearing);
   const absDiff = signedDiff === null ? null : Math.abs(signedDiff);
   const aligned = absDiff !== null && absDiff < ALIGNED_DEG;
-  const arcColor = aligned ? colors.green : ARC_COLOR;
   const qiblaRounded = Math.round(bearing) % 360;
 
-  /** Kadranda dönen, ama ekranda hep dik duran yazı. */
-  const label = (key: string, deg: number, r: number, text: string, style: object) => {
-    const p = polar(g.c, r, deg);
-    return (
-      <Animated.View
-        key={key}
-        style={[styles.labelBox, { left: p.x - 30, top: p.y - 15, transform: [{ rotate: uprightRotate }] }]}
-      >
-        <Text style={style}>{text}</Text>
-      </Animated.View>
-    );
-  };
+  // Kıbleye dönüldüğü an kısa titreşim (her hizalanmada bir kez)
+  useEffect(() => {
+    if (aligned) Vibration.vibrate(35);
+  }, [aligned]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -376,98 +609,40 @@ export default function QiblaScreen() {
           <CalibrationOverlay colors={colors} quality={quality} accuracyDeg={accuracyDeg} onSkip={finishCalibration} />
         ) : (
           <>
-            <View style={{ width: size, height: size }}>
-              {/* Sabit katman: zemin, artı işareti, orta daire ve kıble dilimi */}
-              <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
-                <Circle cx={g.c} cy={g.c} r={g.c - 2} fill={colors.card} />
-                {theme.background ? <Circle cx={g.c} cy={g.c} r={g.c - 2} fill="#000" opacity={0.3} /> : null}
-                <Line x1={g.c - g.arcInner} y1={g.c} x2={g.c + g.arcInner} y2={g.c} stroke={colors.muted} strokeWidth={1} opacity={0.5} />
-                <Line x1={g.c} y1={g.c - g.arcInner} x2={g.c} y2={g.c + g.arcInner} stroke={colors.muted} strokeWidth={1} opacity={0.5} />
-                <Circle cx={g.c} cy={g.c} r={g.arcInner * 0.48} fill={aligned ? colors.green : colors.text} opacity={aligned ? 0.25 : 0.07} />
-              </Svg>
-              <QiblaArc size={size} color={arcColor} register={registerArc} />
-
-              {/* Dönen kadran */}
-              <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ rotate: dialRotate }] }]}>
-                <Svg width={size} height={size}>
-                  {TICKS.map((deg) => {
-                    const major = deg % 30 === 0;
-                    const cardinal = deg % 90 === 0;
-                    const len = cardinal ? 22 : major ? 18 : deg % 10 === 0 ? 12 : 8;
-                    const a = polar(g.c, g.tickOuter, deg);
-                    const b = polar(g.c, g.tickOuter - len, deg);
-                    return (
-                      <Line
-                        key={deg}
-                        x1={a.x}
-                        y1={a.y}
-                        x2={b.x}
-                        y2={b.y}
-                        stroke={major ? colors.text : colors.muted}
-                        strokeWidth={cardinal ? 3 : major ? 2.5 : 1}
-                        opacity={major ? 1 : 0.7}
-                      />
-                    );
-                  })}
-                  {/* Kuzey: kırmızı üçgen */}
-                  <Polygon
-                    points={[polar(g.c, g.tickOuter + 4, 0), polar(g.c, g.tickOuter + 15, -4), polar(g.c, g.tickOuter + 15, 4)]
-                      .map((p) => `${p.x},${p.y}`)
-                      .join(' ')}
-                    fill={colors.danger}
-                  />
-                  {/* Kıble çizgisi */}
-                  {(() => {
-                    const a = polar(g.c, g.arcOuter - 6, bearing);
-                    const b = polar(g.c, g.tickOuter + 14, bearing);
-                    return <Line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={arcColor} strokeWidth={4} strokeLinecap="round" />;
-                  })()}
-                </Svg>
-
-                {DEGREE_LABELS.filter((deg) => Math.abs(angleDiffSigned(deg, bearing)) > 14).map((deg) =>
-                  label(`n${deg}`, deg, g.numberR, String(deg), styles.degreeLabel),
-                )}
-                {label('qibla', bearing, g.numberR + 2, String(qiblaRounded), [styles.qiblaLabel, { color: arcColor }])}
-                {CARDINALS.map((c) => label(`c${c.deg}`, c.deg, g.cardinalR, c.label, styles.cardinalLabel))}
-              </Animated.View>
-
-              {/* Sabit yön çizgisi: telefonun baktığı yön (ekranın tepesi) */}
-              <View
-                pointerEvents="none"
-                style={[
-                  styles.pointer,
-                  {
-                    left: g.c - 2.5,
-                    top: g.c - g.tickOuter - 12,
-                    height: g.tickOuter - g.arcOuter + 12,
-                    backgroundColor: aligned ? colors.green : colors.text,
-                  },
-                ]}
-              />
-            </View>
+            <Dial
+              size={size}
+              colors={colors}
+              photo={!!theme.background}
+              bearing={bearing}
+              aligned={aligned}
+              registerArc={registerArc}
+              dialRotate={dialRotate}
+              uprightRotate={uprightRotate}
+              styles={styles}
+            />
 
             <View style={styles.readout}>
-              {denied ? (
-                <Text style={styles.statusText}>Konum izni verilmedi</Text>
-              ) : signedDiff === null ? (
-                <Text style={styles.statusText}>Pusula başlatılıyor…</Text>
-              ) : aligned ? (
-                <View style={styles.bigRow}>
-                  <MaterialCommunityIcons name="check-circle" size={40} color={colors.green} />
-                  <Text style={[styles.alignedText, { color: colors.green }]}>Kıbleye dönüksün</Text>
-                </View>
-              ) : (
-                <View style={styles.bigRow}>
-                  <MaterialCommunityIcons
-                    name={signedDiff > 0 ? 'arrow-right-bottom' : 'arrow-left-bottom'}
-                    size={36}
-                    color={colors.text}
-                    style={styles.turnIcon}
-                  />
-                  <Text style={styles.bigDegrees}>{Math.round(absDiff ?? 0)}°</Text>
-                  <Text style={styles.bigWord}>{signedDiff > 0 ? 'sağa' : 'sola'}</Text>
-                </View>
-              )}
+              {/* Sabit yükseklik: "Kıbleye dönüksün" tek satır, "146° sağa dön" iki satır; kadran zıplamasın */}
+              <View style={styles.statusArea}>
+                {denied ? (
+                  <Text style={styles.statusText}>Konum izni verilmedi</Text>
+                ) : signedDiff === null ? (
+                  <Text style={styles.statusText}>Pusula başlatılıyor…</Text>
+                ) : aligned ? (
+                  <View style={styles.bigRow}>
+                    <MaterialCommunityIcons name="check-circle" size={40} color={colors.green} />
+                    <Text style={[styles.alignedText, { color: colors.green }]}>Kıbleye dönüksün</Text>
+                  </View>
+                ) : (
+                  <View style={styles.bigRow}>
+                    <TurnArrow diff={signedDiff} styles={styles} />
+                    <View>
+                      <Text style={styles.bigDegrees}>{Math.round(absDiff ?? 0)}°</Text>
+                      <Text style={styles.bigWord}>{signedDiff > 0 ? 'sağa dön' : 'sola dön'}</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
               {displayHeading !== null ? (
                 <Text style={styles.info}>
                   Yön {Math.round(displayHeading) % 360}° {directionLabel(displayHeading)} · Kıble {qiblaRounded}°
@@ -505,10 +680,20 @@ function makeStyles(colors: ThemeColors) {
     center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
     labelBox: { position: 'absolute', width: 60, height: 30, alignItems: 'center', justifyContent: 'center' },
-    degreeLabel: { fontSize: 13, color: colors.muted },
-    qiblaLabel: { fontSize: 18, fontWeight: '800' },
-    cardinalLabel: { fontSize: 22, fontWeight: '500', color: colors.text },
-    pointer: { position: 'absolute', width: 5, borderRadius: 2.5 },
+    degreeLabel: { fontSize: 12, color: colors.muted, fontWeight: '500' },
+    cardinalLabel: { fontSize: 22, fontWeight: '700', color: colors.text },
+    glow: { borderRadius: 9999, borderWidth: 6 },
+    badge: {
+      position: 'absolute',
+      width: BADGE,
+      height: BADGE,
+      borderRadius: BADGE / 2,
+      elevation: 6,
+      shadowColor: '#000',
+      shadowOpacity: 0.3,
+      shadowRadius: 4,
+      shadowOffset: { width: 0, height: 2 },
+    },
 
     readout: {
       alignItems: 'center',
@@ -519,10 +704,18 @@ function makeStyles(colors: ThemeColors) {
       borderRadius: radius,
       backgroundColor: colors.card,
     },
-    bigRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: 10 },
-    turnIcon: { marginBottom: 14 },
-    bigDegrees: { color: colors.text, fontSize: 64, fontWeight: '300', lineHeight: 72 },
-    bigWord: { color: colors.text, fontSize: 36, fontWeight: '300', marginBottom: 8 },
+    statusArea: { minHeight: 96, justifyContent: 'center' },
+    bigRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 },
+    turnCircle: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.accent,
+    },
+    bigDegrees: { color: colors.text, fontSize: 52, fontWeight: '300', lineHeight: 60 },
+    bigWord: { color: colors.muted, fontSize: 22, fontWeight: '500' },
     alignedText: { fontSize: 26, fontWeight: '600', marginBottom: 4 },
     statusText: { color: colors.muted, fontSize: 18, fontWeight: '500' },
     info: { color: colors.text, fontSize: 15, marginTop: 8, textAlign: 'center' },

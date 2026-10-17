@@ -6,7 +6,7 @@ export interface CompassHeading {
   heading: number;
   /** 0 güvenilmez, 1 düşük, 2 orta, 3 yüksek (manyetometre kalibrasyonu) */
   accuracy: number;
-  /** Tahmini yön hatası (±derece); bilinmiyorsa -1 ya da 0 (Android'de bazı cihazlar bildirmez) */
+  /** Tahmini yön hatası (±derece); bilinmiyorsa -1 ya da 0 */
   accuracyDeg: number;
 }
 
