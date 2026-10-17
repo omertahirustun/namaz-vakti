@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { memo, useEffect, useMemo, useRef } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import Text from './AppText';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,7 +24,8 @@ interface ImsakiyeModalProps {
  * Aylık imsakiye tablosunu alttan açılan bir sheet içinde gösterir.
  * Veri/mantık HomeScreen'den taşındı; burada sadece sunum var.
  */
-export default function ImsakiyeModal({ visible, onClose, days, now, next }: ImsakiyeModalProps) {
+// Vakitler ekranı dakikada bir çizilirken kapalı pencere boşuna yeniden çizilmesin
+export default memo(function ImsakiyeModal({ visible, onClose, days, now, next }: ImsakiyeModalProps) {
   const { theme } = useTheme();
   const { colors } = theme;
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -132,7 +133,7 @@ export default function ImsakiyeModal({ visible, onClose, days, now, next }: Ims
       </View>
     </Modal>
   );
-}
+});
 
 function makeStyles(colors: ThemeColors) {
   return StyleSheet.create({

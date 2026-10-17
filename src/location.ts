@@ -1,4 +1,5 @@
 import * as Location from 'expo-location';
+import { findDiyanetId } from './diyanet';
 import { Place } from './types';
 
 const FIX_TIMEOUT_MS = 10_000;
@@ -29,6 +30,7 @@ export async function getCurrentPlace(): Promise<Place | null> {
   const { latitude, longitude } = coords;
 
   let name = 'Konumum';
+  let diyanetId: string | undefined;
   try {
     const [addr] = await Location.reverseGeocodeAsync({ latitude, longitude });
     // Türkiye'de city boş gelir: ilçe subregion'da, il region'da ("Altındağ, Ankara").
@@ -36,10 +38,13 @@ export async function getCurrentPlace(): Promise<Place | null> {
     const province = addr?.region;
     if (town && province && town !== province) name = `${town}, ${province}`;
     else if (town ?? province) name = (town ?? province)!;
+    if (addr?.isoCountryCode === 'TR') {
+      diyanetId = findDiyanetId(province, [addr.subregion, addr.city, addr.district]) ?? undefined;
+    }
   } catch {
-    // ters geocode başarısızsa varsayılan ad kalır
+    // ters geocode başarısızsa varsayılan ad kalır (vakitler Aladhan'dan)
   }
-  return { latitude, longitude, name };
+  return { latitude, longitude, name, diyanetId };
 }
 
 /** Konum iznini ister ve koordinatları döndürür. İzin yoksa null. */

@@ -4,7 +4,7 @@ import type { ColorProp, ImageWidgetSource } from 'react-native-android-widget';
 import { getTwoMonths } from '../api';
 import { loadPlace, loadSettings, loadThemeId } from '../storage';
 import { ThemeId } from '../theme';
-import { countdownStage, dateKey, dayPartsTr, findNext } from '../time';
+import { countdownStage, dateKey, dayPartsTr, findCurrent, findNext } from '../time';
 import { DayTimes, PRAYER_KEYS, PRAYER_NAMES_TR, PrayerKey, WidgetStyle } from '../types';
 import { countdownProps, STAGE_COLORS } from './countdown';
 
@@ -98,7 +98,7 @@ const LOOKS: Record<ThemeId, WidgetLook> = {
   },
 };
 
-/** Ayarlardan seçilen, temadan bağımsız widget görünümleri */
+/** Ayarlardan seçilen, temadan bağımsız widget görünümleri; düz renkler yarı şeffaf (duvar kâğıdı hafif görünür) */
 const STYLE_LOOKS: Record<Exclude<WidgetStyle, 'theme'>, WidgetLook> = {
   transparent: {
     shadow: true,
@@ -110,7 +110,7 @@ const STYLE_LOOKS: Record<Exclude<WidgetStyle, 'theme'>, WidgetLook> = {
     chip: 'rgba(255, 255, 255, 0.28)',
   },
   gray: {
-    background: '#3A3D44',
+    background: 'rgba(58, 61, 68, 0.6)',
     text: '#FFFFFF',
     muted: 'rgba(255, 255, 255, 0.7)',
     faded: 'rgba(255, 255, 255, 0.4)',
@@ -119,7 +119,7 @@ const STYLE_LOOKS: Record<Exclude<WidgetStyle, 'theme'>, WidgetLook> = {
     chip: 'rgba(255, 255, 255, 0.12)',
   },
   black: {
-    background: '#0B0B0D',
+    background: 'rgba(11, 11, 13, 0.5)',
     border: 'rgba(255, 255, 255, 0.1)',
     text: '#FFFFFF',
     muted: 'rgba(255, 255, 255, 0.66)',
@@ -129,7 +129,8 @@ const STYLE_LOOKS: Record<Exclude<WidgetStyle, 'theme'>, WidgetLook> = {
     chip: 'rgba(255, 255, 255, 0.1)',
   },
   white: {
-    background: '#FFFFFF',
+    // Beyazda koyu yazı açık duvar kâğıdında da okunsun diye biraz daha opak
+    background: 'rgba(255, 255, 255, 0.7)',
     text: '#16181D',
     muted: 'rgba(22, 24, 29, 0.62)',
     faded: 'rgba(22, 24, 29, 0.36)',
@@ -358,16 +359,18 @@ export function CountdownWidget({ data, width, now = new Date(), preview = false
 }
 
 /**
- * 6x2 yatay şerit: solda sıradaki vakte canlı geri sayım, ince bir ayraç, sağda yan yana günün altı vakti.
- * Sıradaki vakit dolu bir hapla vurgulanır, geçmiş vakitler soluk kalır. Tek hücre boyuna inince
- * konum/tarih satırı gizlenir ve yazılar yüksekliğe sığacak boya küçülür.
+ * 6x2 yatay şerit: solda sıradaki vakte kalan süre ("Akşama kalan" + canlı sayaç), ince dikey çizgi, sağda günün
+ * altı vakti. Geçmiş vakitler soluk, gelecekler açık renk, içinde bulunulan vakit dolu bir yuvarlağın içinde.
+ * Yatsıdan sonra gece yarısına kadar bugünün vakitleri kalır (Yatsı yuvarlakta).
  * Hücreler dar olduğu için yazılar sistem yazı boyutundan etkilenmez.
  */
 export function StripWidget({ data, width, height, now = new Date(), preview = false }: WidgetProps) {
   const look = lookFor(data);
   const next = data ? findNext(data.days, now) : null;
-  const shownDate = next ? dateKey(next.at) : dateKey(now);
-  const day = data?.days.find((d) => d.date === shownDate);
+  const current = data ? findCurrent(data.days, now) : null;
+  const day = data?.days.find((d) => d.date === dateKey(now));
+  // İçinde bulunulan vakit bugüne aitse yuvarlak içinde (gece yarısından sonra imsaka kadar dünün yatsısıdır)
+  const currentKey = current && dateKey(current.at) === dateKey(now) ? current.key : null;
 
   return (
     <Frame look={look} width={width} height={height} radius={RADIUS} wide>
@@ -376,12 +379,11 @@ export function StripWidget({ data, width, height, now = new Date(), preview = f
           look={look}
           width={width}
           height={height}
-          placeName={data!.placeName}
           day={day}
           nextKey={next.key}
           nextAt={next.at}
+          currentKey={currentKey}
           now={now}
-          isToday={shownDate === dateKey(now)}
           preview={preview}
         />
       ) : (
@@ -405,161 +407,46 @@ function StripContent({
   look,
   width,
   height,
-  placeName,
   day,
   nextKey,
   nextAt,
+  currentKey,
   now,
-  isToday,
   preview,
 }: {
   look: WidgetLook;
   width: number;
   height: number;
-  placeName: string;
   day: DayTimes;
   nextKey: PrayerKey;
   nextAt: Date;
+  currentKey: PrayerKey | null;
   now: Date;
-  isToday: boolean;
   preview: boolean;
 }) {
-  const parts = dayPartsTr(day.date);
   const msLeft = nextAt.getTime() - now.getTime();
   const stage = countdownStage(msLeft);
-  const activeIndex = PRAYER_KEYS.indexOf(nextKey);
+  const currentIndex = currentKey ? PRAYER_KEYS.indexOf(currentKey) : -1;
 
-  // Tek hücre boyundaki şeritte konum/tarih satırı sığmaz
-  const compact = height < 96;
-  const padH = 14;
-  const padV = compact ? 8 : 12;
+  const padH = 12;
+  const padV = height < 96 ? 6 : 10;
   const inner = height - 2 * padV;
-
-  // Sol blok genişliğin ~%30'u; yükseklik yetiyorsa ve sütunlar yanında daralacaksa (telefon genişliği ve altı)
-  // sayaç üst satıra, vakitler tam genişlikte alta alınır. Tek hücre boyunda hep yan yana.
+  // Sol blok genişliğin ~%27'si, sonra ince çizgi (iki yanında 10 dp boşluk)
+  const infoWidth = Math.round(width * 0.27);
   const DIVIDER = 1 + 2 * 10;
-  const sideInfoWidth = Math.round(width * 0.3);
-  const stacked = !compact && (width - 2 * padH - sideInfoWidth - DIVIDER) / 6 - 4 < 40;
-  const infoWidth = stacked ? 0 : sideInfoWidth;
-  // Sütun: 2 dp yan boşluk; "05:52" kalın ~2.7 em, "İkindi" ~3 em; hapın kenarlarında da pay kalsın
-  const columnWidth = (width - 2 * padH - (stacked ? 0 : infoWidth + DIVIDER)) / 6 - 4;
-  // Alt alta düzende üst satır (~20 dp) sütunlardan yer alır
-  const columnsHeight = stacked ? inner - 22 : inner;
-  const columnPad = compact || stacked ? 4 : 9;
-  const timeSize = clamp(
-    9,
-    compact ? 14 : 16,
-    Math.min(Math.floor(columnWidth / 3.5), Math.floor((columnsHeight - 2 * columnPad) / 2.6)),
-  );
-  const nameSize = clamp(8, 11, Math.min(Math.floor(columnWidth / 3.6), timeSize - 2));
+  const columnWidth = (width - 2 * padH - infoWidth - DIVIDER) / 6;
+  // Yuvarlak: sütuna ve yüksekliğe sığan en büyük daire; vakit adı ve saati içine sığacak boyda
+  // ("05:52" kalın ~2.7 em, "İkindi" ~3 em; dairenin iç genişliği çapın ~%80'i)
+  const circle = Math.floor(Math.min(columnWidth - 2, inner));
+  const timeSize = clamp(9, 15, Math.min(Math.floor((circle * 0.8) / 2.9), Math.floor(circle / 2.7)));
+  const nameSize = clamp(8, 11, timeSize - 3);
 
   // "02:36" kalın ~2.7 em, 3.3 OEM'lerin geniş fontuna pay bırakır (son hane kırpılmasın)
-  const countdownSize = stacked
-    ? clamp(12, 20, Math.floor((width - 2 * padH) / 3 / 3.3))
-    : clamp(
-        14,
-        stage === 'urgent' ? 34 : 30,
-        Math.min(Math.floor((infoWidth - 6) / 3.3), Math.floor((inner - (compact ? 15 : 34)) / 1.25)),
-      );
-
-  const caption = (
-    <TextWidget
-      text={`${PRAYER_TO_TR[nextKey]} kalan`}
-      maxLines={1}
-      allowFontScaling={false}
-      style={{ fontSize: compact || stacked ? 10 : 11, ...FONTS.semibold, ...ink(look, look.accent) }}
-    />
+  const countdownSize = clamp(
+    14,
+    stage === 'urgent' ? 34 : 30,
+    Math.min(Math.floor((infoWidth - 6) / 3.3), Math.floor((inner - 16) / 1.25)),
   );
-  // Yer tutucu; üstüne canlı geri sayım çizilir (kütüphane yaması, RNWidget.addCountdowns)
-  const countdown = (
-    <TextWidget
-      {...countdownProps(nextAt, msLeft, preview)}
-      maxLines={1}
-      allowFontScaling={false}
-      style={{
-        fontSize: countdownSize,
-        ...FONTS.bold,
-        ...(stage === 'normal' ? ink(look, look.text) : { color: STAGE_COLORS[stage] }),
-        ...(stacked ? { marginLeft: 6 } : {}),
-      }}
-    />
-  );
-  const columns = (
-    <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', alignItems: 'center' }}>
-      {PRAYER_KEYS.map((key, i) => {
-        const active = i === activeIndex;
-        const past = isToday && i < activeIndex;
-        return (
-          <FlexWidget
-            key={key}
-            style={{
-              flex: 1,
-              flexDirection: 'column',
-              alignItems: 'center',
-              marginHorizontal: 2,
-              paddingVertical: columnPad,
-              borderRadius: 14,
-              backgroundColor: active ? look.accent : 'rgba(0, 0, 0, 0)',
-            }}
-          >
-            <TextWidget
-              text={PRAYER_NAMES_TR[key]}
-              maxLines={1}
-              allowFontScaling={false}
-              style={{
-                fontSize: nameSize,
-                ...(active ? FONTS.semibold : FONTS.medium),
-                ...(active ? { color: look.onAccent } : ink(look, past ? look.faded : look.muted)),
-              }}
-            />
-            <TextWidget
-              text={day.times[key]}
-              maxLines={1}
-              allowFontScaling={false}
-              style={{
-                fontSize: timeSize,
-                ...(active ? FONTS.bold : FONTS.semibold),
-                ...(active ? { color: look.onAccent } : ink(look, past ? look.faded : look.text)),
-                marginTop: compact || stacked ? 1 : 3,
-              }}
-            />
-          </FlexWidget>
-        );
-      })}
-    </FlexWidget>
-  );
-
-  if (stacked) {
-    return (
-      <FlexWidget
-        style={{
-          width: 'match_parent',
-          height: 'match_parent',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          paddingHorizontal: padH - 4,
-          paddingVertical: padV,
-        }}
-      >
-        <FlexWidget
-          style={{ width: 'match_parent', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}
-        >
-          {caption}
-          {countdown}
-          <FlexWidget style={{ flex: 1, alignItems: 'flex-end', paddingLeft: 8 }}>
-            <TextWidget
-              text={`${placeName} · ${isToday ? '' : 'Yarın · '}${parts.dayMonth}`}
-              maxLines={1}
-              truncate="END"
-              allowFontScaling={false}
-              style={{ fontSize: 11, ...FONTS.medium, ...ink(look, look.muted) }}
-            />
-          </FlexWidget>
-        </FlexWidget>
-        {columns}
-      </FlexWidget>
-    );
-  }
 
   return (
     <FlexWidget
@@ -573,31 +460,70 @@ function StripContent({
       }}
     >
       <FlexWidget style={{ width: infoWidth, flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center' }}>
-        {caption}
-        {countdown}
-        {compact ? (
-          <FlexWidget style={{ width: 0, height: 0 }} />
-        ) : (
-          <TextWidget
-            text={`${placeName} · ${isToday ? '' : 'Yarın · '}${parts.dayMonth}`}
-            maxLines={1}
-            truncate="END"
-            allowFontScaling={false}
-            style={{ fontSize: 11, ...FONTS.medium, ...ink(look, look.muted), marginTop: 2 }}
-          />
-        )}
+        <TextWidget
+          text={`${PRAYER_TO_TR[nextKey]} kalan`}
+          maxLines={1}
+          allowFontScaling={false}
+          style={{ fontSize: 11, ...FONTS.semibold, ...ink(look, look.muted) }}
+        />
+        {/* Yer tutucu; üstüne canlı geri sayım çizilir (kütüphane yaması, RNWidget.addCountdowns) */}
+        <TextWidget
+          {...countdownProps(nextAt, msLeft, preview)}
+          maxLines={1}
+          allowFontScaling={false}
+          style={{
+            fontSize: countdownSize,
+            ...FONTS.bold,
+            ...(stage === 'normal' ? ink(look, look.text) : { color: STAGE_COLORS[stage] }),
+          }}
+        />
       </FlexWidget>
 
-      <FlexWidget
-        style={{
-          width: 1,
-          height: Math.max(16, inner - (compact ? 8 : 20)),
-          marginHorizontal: 10,
-          backgroundColor: look.chip,
-        }}
-      />
+      <FlexWidget style={{ width: 1, height: Math.round(inner * 0.7), marginHorizontal: 10, backgroundColor: look.faded }} />
 
-      <FlexWidget style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>{columns}</FlexWidget>
+      <FlexWidget style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+        {PRAYER_KEYS.map((key, i) => {
+          const active = i === currentIndex;
+          const past = i < currentIndex;
+          const color = active ? look.onAccent : past ? look.faded : look.text;
+          return (
+            <FlexWidget key={key} style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+              <FlexWidget
+                style={{
+                  width: circle,
+                  height: circle,
+                  borderRadius: circle / 2,
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: active ? look.accent : 'rgba(0, 0, 0, 0)',
+                }}
+              >
+                <TextWidget
+                  text={PRAYER_NAMES_TR[key]}
+                  maxLines={1}
+                  allowFontScaling={false}
+                  style={{
+                    fontSize: nameSize,
+                    ...(active ? FONTS.semibold : FONTS.medium),
+                    ...(active ? { color } : ink(look, color)),
+                  }}
+                />
+                <TextWidget
+                  text={day.times[key]}
+                  maxLines={1}
+                  allowFontScaling={false}
+                  style={{
+                    fontSize: timeSize,
+                    ...FONTS.bold,
+                    ...(active ? { color } : ink(look, color)),
+                  }}
+                />
+              </FlexWidget>
+            </FlexWidget>
+          );
+        })}
+      </FlexWidget>
     </FlexWidget>
   );
 }

@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, AppState, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import Text from '../components/AppText';
 import SponsorBadge from '../components/SponsorBadge';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation } from '@react-navigation/native';
 import DailySection from '../components/DailySection';
 import ImsakiyeModal from '../components/ImsakiyeModal';
 import WidgetRefresh from '../../modules/widget-refresh';
@@ -21,10 +22,12 @@ import {
   findNext,
   formatCountdown,
   longDateTr,
+  NextPrayer,
   pad,
   toDate,
 } from '../time';
 import { PRAYER_KEYS, PRAYER_NAMES_TR, PrayerKey } from '../types';
+import { useNow } from '../useNow';
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 const PRAYER_ICONS: Record<PrayerKey, IconName> = {
@@ -47,22 +50,19 @@ export default function HomeScreen() {
   const { theme } = useTheme();
   const { colors, heroGradient, prayerColors } = theme;
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [now, setNow] = useState(new Date());
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
+  const navigation = useNavigation();
+  // Ekran dakikada bir çizilir; saniyelik sayaç yalnız HeroCountdown'da
+  const now = useNow(60_000);
 
   const todayKey = dateKey(now);
   const today = useMemo(() => days.find((d) => d.date === todayKey), [days, todayKey]);
   const [imsakiyeVisible, setImsakiyeVisible] = useState(false);
+  const closeImsakiye = useCallback(() => setImsakiyeVisible(false), []);
   const next = useMemo(() => findNext(days, now), [days, now]);
   const nextDate = next ? dateKey(next.at) : null;
   const current = useMemo(() => findCurrent(days, now), [days, now]);
   const currentDate = current ? dateKey(current.at) : null;
-  const progress =
-    current && next ? Math.min(1, (now.getTime() - current.at.getTime()) / (next.at.getTime() - current.at.getTime())) : 0;
+  const progress = progressBetween(current, next, now);
 
   const [locating, setLocating] = useState(false);
   const onLocate = async () => {
@@ -83,47 +83,33 @@ export default function HomeScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={colors.accent} />}
       >
-        <TouchableOpacity style={styles.placeRow} onPress={onLocate} disabled={locating} activeOpacity={0.7}>
-          <Ionicons name="location-sharp" size={18} color={colors.accent} />
-          <Text style={styles.place} numberOfLines={1}>
-            {place.name}
-          </Text>
-          {locating ? (
-            <ActivityIndicator size="small" color={colors.accent} />
-          ) : (
-            <Ionicons name="refresh" size={16} color={colors.muted} />
-          )}
-        </TouchableOpacity>
+        <View style={styles.topRow}>
+          <TouchableOpacity style={styles.placeRow} onPress={onLocate} disabled={locating} activeOpacity={0.7}>
+            <Ionicons name="location-sharp" size={18} color={colors.accent} />
+            <Text style={styles.place} numberOfLines={1}>
+              {place.name}
+            </Text>
+            {locating ? (
+              <ActivityIndicator size="small" color={colors.accent} />
+            ) : (
+              <Ionicons name="refresh" size={16} color={colors.muted} />
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Ayarlar' as never)}
+            hitSlop={12}
+            style={styles.settingsButton}
+            accessibilityLabel="Ayarlar"
+          >
+            <Ionicons name="settings-outline" size={24} color={colors.text} />
+          </TouchableOpacity>
+        </View>
         <Text style={styles.date}>{longDateTr(now)}</Text>
         {today ? <Text style={styles.hijri}>{today.hijri} H</Text> : null}
 
         <LinearGradient colors={heroGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
           {next ? (
-            <>
-              {current ? (
-                <View style={styles.nowPill}>
-                  <View style={styles.nowDot} />
-                  <Text style={styles.nowText}>Şu an {PRAYER_NAMES_TR[current.key]} vakti</Text>
-                </View>
-              ) : null}
-              <Text style={styles.heroLabel}>{PRAYER_NAMES_TR[next.key]} vaktine kalan</Text>
-              <Countdown msLeft={next.at.getTime() - now.getTime()} styles={styles} />
-              {current ? (
-                <View style={styles.progressWrap}>
-                  <View style={styles.progressTrack}>
-                    <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
-                  </View>
-                  <View style={styles.progressLabels}>
-                    <Text style={styles.progressText}>
-                      {PRAYER_NAMES_TR[current.key]} {formatHm(current.at)}
-                    </Text>
-                    <Text style={styles.progressText}>
-                      {PRAYER_NAMES_TR[next.key]} {formatHm(next.at)}
-                    </Text>
-                  </View>
-                </View>
-              ) : null}
-            </>
+            <HeroCountdown current={current} next={next} styles={styles} />
           ) : loading ? (
             <ActivityIndicator color={colors.onHero} />
           ) : (
@@ -216,7 +202,7 @@ export default function HomeScreen() {
 
       <ImsakiyeModal
         visible={imsakiyeVisible}
-        onClose={() => setImsakiyeVisible(false)}
+        onClose={closeImsakiye}
         days={days}
         now={now}
         next={next}
@@ -256,6 +242,52 @@ function ExactAlarmHint({ styles, colors }: { styles: ReturnType<typeof makeStyl
   );
 }
 
+function progressBetween(current: NextPrayer | null, next: NextPrayer | null, now: Date): number {
+  if (!current || !next) return 0;
+  return Math.min(1, (now.getTime() - current.at.getTime()) / (next.at.getTime() - current.at.getTime()));
+}
+
+/** Geri sayım kartının içi; saniyede bir yalnız bu bölüm çizilir. */
+const HeroCountdown = memo(function HeroCountdown({
+  current,
+  next,
+  styles,
+}: {
+  current: NextPrayer | null;
+  next: NextPrayer;
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  const now = useNow(1000);
+  const progress = progressBetween(current, next, now);
+  return (
+    <>
+      {current ? (
+        <View style={styles.nowPill}>
+          <View style={styles.nowDot} />
+          <Text style={styles.nowText}>Şu an {PRAYER_NAMES_TR[current.key]} vakti</Text>
+        </View>
+      ) : null}
+      <Text style={styles.heroLabel}>{PRAYER_NAMES_TR[next.key]} vaktine kalan</Text>
+      <Countdown msLeft={next.at.getTime() - now.getTime()} styles={styles} />
+      {current ? (
+        <View style={styles.progressWrap}>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+          </View>
+          <View style={styles.progressLabels}>
+            <Text style={styles.progressText}>
+              {PRAYER_NAMES_TR[current.key]} {formatHm(current.at)}
+            </Text>
+            <Text style={styles.progressText}>
+              {PRAYER_NAMES_TR[next.key]} {formatHm(next.at)}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+    </>
+  );
+});
+
 /** Son 10 dakikada sayaç kırmızımsı olur ve saniye görünür; son 5 dakikada koyu kırmızı, iri ve hafifçe titrer. */
 function Countdown({ msLeft, styles }: { msLeft: number; styles: ReturnType<typeof makeStyles> }) {
   const stage: CountdownStage = countdownStage(msLeft);
@@ -294,7 +326,9 @@ function makeStyles(colors: ThemeColors) {
   return StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 20, paddingBottom: 40 },
+  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   placeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
+  settingsButton: { padding: 4 },
   place: { color: colors.text, fontSize: 20, fontWeight: '700', flexShrink: 1, ...photoTextShadow(colors) },
   date: { color: colors.text, marginTop: 6, fontSize: 14, ...photoTextShadow(colors) },
   hijri: { color: colors.accent, marginTop: 2, fontSize: 13, ...photoTextShadow(colors) },

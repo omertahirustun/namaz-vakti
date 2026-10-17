@@ -1,15 +1,23 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { Alert, Image, Platform, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import Text from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { ensureNotificationPermission, needsExactAlarmSetting, openBatterySettings, openExactAlarmSettings } from '../notifications';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import {
+  ensureNotificationPermission,
+  needsExactAlarmSetting,
+  openBatterySettings,
+  openExactAlarmSettings,
+} from '../notifications';
+import { playSoundPreview, stopSoundPreview } from '../soundPreview';
 import { ongoingSupported } from '../ongoing';
+import { DIYANET_METHOD } from '../api';
 import { usePrayer } from '../PrayerContext';
 import { useTheme } from '../ThemeContext';
 import { photoTextShadow, radius, THEME_ORDER, ThemeColors, THEMES } from '../theme';
-import { CALC_METHODS, PRAYER_KEYS, PRAYER_NAMES_TR, WIDGET_STYLES } from '../types';
+import { CALC_METHODS, NOTIFICATION_SOUNDS, NotificationSound, PRAYER_KEYS, PRAYER_NAMES_TR, WIDGET_STYLES } from '../types';
 
 const OFFSETS = [0, 5, 10, 15, 20, 30];
 
@@ -25,6 +33,13 @@ export default function SettingsScreen() {
   const { colors } = theme;
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [widgetsVisible, setWidgetsVisible] = useState(false);
+  const navigation = useNavigation();
+
+  const onPreview = (sound: NotificationSound) => {
+    if (!playSoundPreview(sound)) Alert.alert('Dinlenemiyor', "iPhone'da telefonun bildirim sesi uygulamadan çalınamıyor.");
+  };
+  // Ayarlar'dan çıkınca çalan önizleme sesi kesilsin (sekme olduğu için ekran kapanmaz, odak kaybolur)
+  useFocusEffect(useCallback(() => stopSoundPreview, []));
 
   const onLocate = async () => {
     try {
@@ -55,6 +70,9 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerRow}>
+          <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={12} style={styles.back}>
+            <Ionicons name="chevron-back" size={26} color={colors.text} />
+          </TouchableOpacity>
           <Text style={styles.title}>Ayarlar</Text>
         </View>
 
@@ -183,6 +201,35 @@ export default function SettingsScreen() {
               })}
             </View>
 
+            <Text style={styles.subsection}>Bildirim sesi</Text>
+            <View style={styles.card}>
+              {NOTIFICATION_SOUNDS.map((s, i) => {
+                const active = settings.sound === s.id;
+                return (
+                  <TouchableOpacity
+                    key={s.id}
+                    style={[styles.rowBetween, i > 0 && styles.sep]}
+                    onPress={() => updateSettings({ sound: s.id })}
+                  >
+                    <Ionicons
+                      name={active ? 'radio-button-on' : 'radio-button-off'}
+                      size={22}
+                      color={active ? colors.accent : colors.muted}
+                      style={styles.radio}
+                    />
+                    <View style={styles.rowText}>
+                      <Text style={styles.label}>{s.label}</Text>
+                      <Text style={styles.hint}>{s.hint}</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => onPreview(s.id)} hitSlop={8} style={styles.listen}>
+                      <Ionicons name="play-circle-outline" size={20} color={colors.accent} />
+                      <Text style={styles.listenText}>Dinle</Text>
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             {needsExactAlarmSetting ? (
               <>
                 <Text style={styles.subsection}>Bildirimlerin tam vaktinde gelmesi için</Text>
@@ -221,7 +268,12 @@ export default function SettingsScreen() {
           ))}
         </View>
 
-        <Text style={styles.footer}>Vakitler Aladhan API ile hesaplanır. İnternet yokken önbellekteki aylar gösterilir.</Text>
+        <Text style={styles.footer}>
+          {settings.method === DIYANET_METHOD && place.diyanetId
+            ? "Vakitler Diyanet İşleri Başkanlığı'nın ilçe takviminden alınır; ulaşılamazsa Aladhan ile hesaplanır."
+            : 'Vakitler Aladhan API ile hesaplanır.'}{' '}
+          İnternet yokken önbellekteki vakitler gösterilir.
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -231,7 +283,7 @@ function makeStyles(colors: ThemeColors) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.bg },
     content: { padding: 20, paddingBottom: 50 },
-    headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    headerRow: { flexDirection: 'row', alignItems: 'center' },
     title: { color: colors.text, fontSize: 24, fontWeight: '700', ...photoTextShadow(colors) },
     section: { color: colors.accent, fontSize: 13, fontWeight: '700', marginTop: 24, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1, ...photoTextShadow(colors) },
     subsection: { color: colors.muted, fontSize: 13, marginTop: 14, marginBottom: 8, ...photoTextShadow(colors) },
@@ -242,6 +294,10 @@ function makeStyles(colors: ThemeColors) {
     label: { color: colors.text, fontSize: 16 },
     rowText: { flex: 1, paddingRight: 8 },
     hint: { color: colors.muted, fontSize: 12, marginTop: 2, lineHeight: 16 },
+    radio: { marginRight: 10 },
+    listen: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4 },
+    listenText: { color: colors.accent, fontSize: 14, fontWeight: '600' },
+    back: { marginRight: 4, marginLeft: -6 },
     link: { color: colors.accent, paddingVertical: 10, fontWeight: '600' },
     chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     chip: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.solid },

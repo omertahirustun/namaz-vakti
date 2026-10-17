@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -24,8 +24,23 @@ type IconName = React.ComponentProps<typeof Ionicons>['name'];
 const ICONS: Record<string, IconName> = {
   Vakitler: 'time-outline',
   Kıble: 'compass-outline',
-  Ayarlar: 'settings-outline',
 };
+
+/** Ayarlar alt barda görünmez; Vakitler'in sağ üstündeki dişliden açılır ve açıkken alt bar gizlenir */
+const SETTINGS_OPTIONS = {
+  tabBarButton: () => null,
+  tabBarItemStyle: { display: 'none' as const },
+  tabBarStyle: { display: 'none' as const },
+};
+
+function TabIcon({ route, color, size }: { route: string; color: string; size: number }) {
+  // Ionicons'ta cami ikonu yok
+  return route === 'Camiler' ? (
+    <MaterialCommunityIcons name="mosque-outline" size={size} color={color} />
+  ) : (
+    <Ionicons name={ICONS[route]} size={size} color={color} />
+  );
+}
 
 export default function App() {
   // Font yüklenemese de uygulama sistem fontuyla açılsın
@@ -75,30 +90,34 @@ function AppShell({ fontsReady }: { fontsReady: boolean }) {
     [theme],
   );
 
+  // Her çizimde yeni nesne verilirse gezgin tüm sekmelerin ayarlarını yeniden işler
+  const screenOptions = useCallback(
+    ({ route }: { route: { name: string } }) => ({
+      headerShown: false,
+      // Görünmeyen sekmeler dondurulur: arkadaki Vakitler sayacı ya da Kıble kadranı çizilmeye devam etmez
+      freezeOnBlur: true,
+      tabBarActiveTintColor: theme.colors.accent,
+      tabBarInactiveTintColor: theme.colors.muted,
+      tabBarStyle: { backgroundColor: theme.colors.card, borderTopColor: theme.colors.border },
+      tabBarIcon: ({ color, size }: { color: string; size: number }) => <TabIcon route={route.name} color={color} size={size} />,
+    }),
+    [theme],
+  );
+
   if (!ready) return null;
 
   const content = (
     <>
       <StatusBar style={theme.statusBar} />
       <Tab.Navigator
-        screenOptions={({ route }) => ({
-          headerShown: false,
-          tabBarActiveTintColor: theme.colors.accent,
-          tabBarInactiveTintColor: theme.colors.muted,
-          tabBarStyle: { backgroundColor: theme.colors.card, borderTopColor: theme.colors.border },
-          tabBarIcon: ({ color, size }) =>
-            // Ionicons'ta cami ikonu yok
-            route.name === 'Camiler' ? (
-              <MaterialCommunityIcons name="mosque-outline" size={size} color={color} />
-            ) : (
-              <Ionicons name={ICONS[route.name]} size={size} color={color} />
-            ),
-        })}
+        // Ayarlar sekmesi alt barda yok, Vakitler'in sağ üstünden açılır; geri tuşu açıldığı sekmeye dönsün
+        backBehavior="history"
+        screenOptions={screenOptions}
       >
         <Tab.Screen name="Vakitler" component={HomeScreen} />
         <Tab.Screen name="Kıble" component={QiblaScreen} />
         <Tab.Screen name="Camiler" component={MosquesScreen} />
-        <Tab.Screen name="Ayarlar" component={SettingsScreen} />
+        <Tab.Screen name="Ayarlar" component={SettingsScreen} options={SETTINGS_OPTIONS} />
       </Tab.Navigator>
     </>
   );

@@ -4,6 +4,7 @@ import Text from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
+import * as Location from 'expo-location';
 import { getCurrentCoords } from '../location';
 import { directionName, findNearbyMosques, formatDistance, loadCachedMosques, Mosque, openInMaps } from '../mosques';
 import { useTheme } from '../ThemeContext';
@@ -31,12 +32,25 @@ export default function MosquesScreen() {
   const [mode, setMode] = useState<Mode>('list');
   const loadId = useRef(0);
 
+  const showLastKnown = useCallback(async (id: number) => {
+    if (!(await Location.getForegroundPermissionsAsync()).granted) return;
+    const last = await Location.getLastKnownPositionAsync();
+    if (!last || id !== loadId.current) return;
+    const cached = await loadCachedMosques(last.coords.latitude, last.coords.longitude);
+    if (!cached || id !== loadId.current) return;
+    setOrigin((o) => o ?? { latitude: last.coords.latitude, longitude: last.coords.longitude });
+    setMosques((m) => (m.length > 0 ? m : cached));
+    setStatus('ready');
+  }, []);
+
   // Vakitler için kayıtlı şehir yeterli ama cami için birkaç yüz metre bile önemli:
   // her aramada taze konum alınır. Önce son aramanın sonucu anında gösterilir,
   // sonra internetten güncellenir; güncelleme başarısızsa eldeki liste korunur.
   // Dönüş değeri: internetten güncelleme başarılı mı.
   const load = useCallback(async (): Promise<boolean> => {
     const id = ++loadId.current;
+    // Taze GPS 10 sn'ye kadar sürebilir; beklerken telefonun bildiği son konumun önbellekteki listesi hemen gösterilsin
+    showLastKnown(id).catch(() => {});
     try {
       let coords: Awaited<ReturnType<typeof getCurrentCoords>>;
       try {

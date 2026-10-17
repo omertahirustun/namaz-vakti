@@ -1,6 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DayTimes, Place, PRAYER_KEYS, PrayerKey } from './types';
 import { pad } from './time';
+import { getDiyanetDays } from './diyanet';
+
+/** Aladhan'ın Diyanet yöntemi; seçiliyse vakitler Diyanet'in kendi takviminden alınır. */
+export const DIYANET_METHOD = 13;
 
 const BASE = 'https://api.aladhan.com/v1';
 
@@ -72,8 +76,22 @@ export async function getMonth(
   return days;
 }
 
-/** Bu ay + gelecek ay (bildirim planı ve gün geçişleri için). */
+/**
+ * Bildirim planı, imsakiye ve gün geçişleri için önümüzdeki ~30 gün. Diyanet yöntemi seçiliyken ve yer Türkiye'deyse
+ * Diyanet'in ilçe takvimi; ona ulaşılamazsa ya da başka yöntemde Aladhan'dan bu ay + gelecek ay.
+ */
 export async function getTwoMonths(place: Place, method: number, now: Date): Promise<DayTimes[]> {
+  if (method === DIYANET_METHOD && place.diyanetId) {
+    try {
+      return await getDiyanetDays(place.diyanetId, now);
+    } catch {
+      // Aladhan'ın yaklaşık hesabıyla devam
+    }
+  }
+  return getAladhanMonths(place, method, now);
+}
+
+async function getAladhanMonths(place: Place, method: number, now: Date): Promise<DayTimes[]> {
   const y = now.getFullYear();
   const m = now.getMonth() + 1;
   const ny = m === 12 ? y + 1 : y;

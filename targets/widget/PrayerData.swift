@@ -41,6 +41,8 @@ struct WidgetData: Codable {
   var latitude: Double
   var longitude: Double
   var method: Int
+  /// Diyanet ilçe kimliği; varsa (ve yöntem Diyanet ise) vakitler Diyanet'in ilçe takviminden çekilir
+  var diyanetId: String?
   var days: [DayTimes]
 }
 
@@ -154,7 +156,34 @@ private func fetchMonth(_ base: WidgetData, year: Int, month: Int) async throws 
   }
 }
 
-/// Önümüzde 3 günden az vakit kaldıysa bu ayı ve gelecek ayı çekip ortak alana yazar.
+// Diyanet ilçe takvimi (src/diyanet.ts ile aynı kaynak); ~30 gün verir
+private struct DiyanetDay: Decodable {
+  let MiladiTarihKisa: String
+  let HicriTarihUzun: String
+  let Imsak: String
+  let Gunes: String
+  let Ogle: String
+  let Ikindi: String
+  let Aksam: String
+  let Yatsi: String
+}
+
+private func fetchDiyanet(_ id: String) async throws -> [DayTimes] {
+  let url = URL(string: "https://ezanvakti.emushaf.net/vakitler/\(id)")!
+  let (data, _) = try await URLSession.shared.data(from: url)
+  let decoded = try JSONDecoder().decode([DiyanetDay].self, from: data)
+  return decoded.map { raw in
+    // "14.10.2026" -> "2026-10-14"
+    let g = raw.MiladiTarihKisa.split(separator: ".")
+    let times = [
+      "Fajr": raw.Imsak, "Sunrise": raw.Gunes, "Dhuhr": raw.Ogle,
+      "Asr": raw.Ikindi, "Maghrib": raw.Aksam, "Isha": raw.Yatsi,
+    ].mapValues { String($0.prefix(5)) }
+    return DayTimes(date: "\(g[2])-\(g[1])-\(g[0])", times: times, hijri: raw.HicriTarihUzun)
+  }
+}
+
+/// Önümüzde 3 günden az vakit kaldıysa Diyanet takvimini (yoksa Aladhan'dan bu ayı ve gelecek ayı) çekip ortak alana yazar.
 func refreshIfRunningLow(_ data: WidgetData, now: Date) async -> WidgetData {
   let today = dateKey(now)
   let ahead = data.days.filter { $0.date >= today }.count
@@ -162,6 +191,12 @@ func refreshIfRunningLow(_ data: WidgetData, now: Date) async -> WidgetData {
   let c = Calendar.current.dateComponents([.year, .month], from: now)
   let (y, m) = (c.year!, c.month!)
   let (ny, nm) = m == 12 ? (y + 1, 1) : (y, m + 1)
+  if data.method == 13, let id = data.diyanetId, let days = try? await fetchDiyanet(id), !days.isEmpty {
+    var updated = data
+    updated.days = days
+    saveWidgetData(updated)
+    return updated
+  }
   do {
     var days = try await fetchMonth(data, year: y, month: m)
     if let next = try? await fetchMonth(data, year: ny, month: nm) { days += next }

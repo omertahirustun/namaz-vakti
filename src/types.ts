@@ -23,6 +23,8 @@ export interface Place {
   latitude: number;
   longitude: number;
   name: string;
+  /** Diyanet ilçe kimliği (Türkiye'de); varsa vakitler Diyanet'in ilçe takviminden gelir */
+  diyanetId?: string;
 }
 
 export interface Settings {
@@ -36,7 +38,17 @@ export interface Settings {
   widgetStyle: WidgetStyle;
   /** Bildirim çekmecesinde sıradaki vakte geri sayan kalıcı bildirim (yalnız Android) */
   ongoingNotification: boolean;
+  /** Vakit bildiriminin sesi */
+  sound: NotificationSound;
 }
+
+export type NotificationSound = 'ezan' | 'zil' | 'system';
+
+export const NOTIFICATION_SOUNDS: { id: NotificationSound; label: string; hint: string }[] = [
+  { id: 'ezan', label: 'Ezan', hint: 'Kısa "Allahu Ekber" (5 sn)' },
+  { id: 'zil', label: 'Zil', hint: 'Üç notalı yumuşak zil' },
+  { id: 'system', label: 'Telefonun bildirim sesi', hint: 'Telefonda seçili varsayılan ses' },
+];
 
 export type WidgetStyle = 'theme' | 'transparent' | 'gray' | 'black' | 'white';
 
@@ -55,12 +67,14 @@ export const DEFAULT_SETTINGS: Settings = {
   method: 13,
   widgetStyle: 'theme',
   ongoingNotification: false,
+  sound: 'zil',
 };
 
 export const DEFAULT_PLACE: Place = {
   latitude: 41.0082,
   longitude: 28.9784,
   name: 'İstanbul',
+  diyanetId: '9541',
 };
 
 export const CALC_METHODS: { id: number; label: string }[] = [

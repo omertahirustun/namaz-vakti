@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { memo, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Share, StyleSheet, TouchableOpacity, View } from 'react-native';
 import Text from './AppText';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -74,7 +74,8 @@ function Expandable({ text, style, lines, moreStyle }: { text: string; style: ob
   );
 }
 
-export default function DailySection({ date }: { date: string }) {
+// Yalnız tarih değişince çizilir (Vakitler ekranının dakikalık yenilenmesinden etkilenmez)
+export default memo(function DailySection({ date }: { date: string }) {
   const { theme } = useTheme();
   const { colors } = theme;
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -164,7 +165,7 @@ export default function DailySection({ date }: { date: string }) {
       </Card>
     </View>
   );
-}
+});
 
 function makeStyles(colors: ThemeColors) {
   return StyleSheet.create({
